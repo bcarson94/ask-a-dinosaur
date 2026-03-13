@@ -14,18 +14,64 @@ type AppMode = "attract" | "conversation";
 
 // ==================== CONSTANTS ====================
 
+// Quick questions are answered locally (no API call) so the app can respond instantly and save tokens.
+// Fill in the answers below as desired.
 const QUICK_QUESTIONS = [
-  "What did you eat for breakfast?",
-  "Were you scared of anything?",
-  "How big were you really?",
-  "Did you have any friends?",
-  "What's your favorite thing about being a dinosaur?",
-  "Could you beat up a Triceratops?",
-  "Did you actually roar?",
-  "What happened to all the dinosaurs?",
-  "Were your arms really that small?",
-  "What was the weather like?",
+  {
+    id: "breakfast",
+    label: "What did you eat for breakfast?",
+  },
+  {
+    id: "scared",
+    label: "Were you scared of anything?",
+  },
+  {
+    id: "size",
+    label: "How big were you really?",
+  },
+  {
+    id: "friends",
+    label: "Did you have any friends?",
+  },
+  {
+    id: "favorite",
+    label: "What's your favorite thing about being a dinosaur?",
+  },
+  {
+    id: "beat-up",
+    label: "Could you beat up a Triceratops?",
+  },
+  {
+    id: "roar",
+    label: "Did you actually roar?",
+  },
+  {
+    id: "extinction",
+    label: "What happened to all the dinosaurs?",
+  },
+  {
+    id: "arms",
+    label: "Were your arms really that small?",
+  },
+  {
+    id: "weather",
+    label: "What was the weather like?",
+  },
 ];
+
+// ====== Fill in these canned answers ======
+const QUICK_QUESTION_ANSWERS: Record<string, string> = {
+  breakfast: "[INSERT ANSWER]",
+  scared: "[INSERT ANSWER]",
+  size: "[INSERT ANSWER]",
+  friends: "[INSERT ANSWER]",
+  favorite: "[INSERT ANSWER]",
+  "beat-up": "[INSERT ANSWER]",
+  roar: "[INSERT ANSWER]",
+  extinction: "[INSERT ANSWER]",
+  arms: "[INSERT ANSWER]",
+  weather: "[INSERT ANSWER]",
+};
 
 const BUTTON_COLORS = [
   "bg-[#e8722a] active:bg-[#c55f22]",
@@ -540,6 +586,24 @@ export default function KioskApp() {
     [isLoading, messages, resetInactivityTimer]
   );
 
+  // ---- Send quick canned response (no API call) ----
+  const sendQuickReply = useCallback(
+    (questionId: string, questionLabel: string) => {
+      const answer = QUICK_QUESTION_ANSWERS[questionId] || "[Answer not set yet]";
+      const userMessage: ChatMessage = { role: "user", content: questionLabel };
+      const assistantMessage: ChatMessage = { role: "assistant", content: answer };
+
+      setMessages((prev) => [...prev, userMessage, assistantMessage]);
+      setRexMood("speaking");
+      setConsecutiveErrors(0);
+      resetInactivityTimer();
+
+      // Return to idle after speaking animation
+      setTimeout(() => setRexMood("idle"), 2000);
+    },
+    [resetInactivityTimer]
+  );
+
   // ---- Handle form submit ----
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -683,12 +747,12 @@ export default function KioskApp() {
           <div className="grid grid-cols-2 gap-2.5">
             {QUICK_QUESTIONS.map((q, i) => (
               <button
-                key={i}
-                onClick={() => sendMessage(q)}
+                key={q.id}
+                onClick={() => sendQuickReply(q.id, q.label)}
                 disabled={isLoading || consecutiveErrors >= 3}
                 className={`min-h-[60px] px-4 py-3 rounded-xl text-white font-semibold text-lg text-left leading-snug shadow-md transition-transform active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed ${BUTTON_COLORS[i]}`}
               >
-                {q}
+                {q.label}
               </button>
             ))}
           </div>
