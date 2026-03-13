@@ -61,16 +61,16 @@ const QUICK_QUESTIONS = [
 
 // ====== Fill in these canned answers ======
 const QUICK_QUESTION_ANSWERS: Record<string, string> = {
-  breakfast: "[INSERT ANSWER]",
-  scared: "[INSERT ANSWER]",
-  size: "[INSERT ANSWER]",
-  friends: "[INSERT ANSWER]",
-  favorite: "[INSERT ANSWER]",
-  "beat-up": "[INSERT ANSWER]",
-  roar: "[INSERT ANSWER]",
-  extinction: "[INSERT ANSWER]",
-  arms: "[INSERT ANSWER]",
-  weather: "[INSERT ANSWER]",
+  breakfast: "ROAR! For breakfast, I usually hunted down a big, tasty duck-billed dinosaur – yummy! It took my ginormous 12,800-pound bite force to crunch through those bones, you know. I needed lots of energy to be such a magnificent 40-foot-long predator!",
+  scared: "Scared? ME? Rex, the biggest, baddest dino around, with a bite force of 12,800 pounds? Ha! Usually, *other* dinosaurs were scared of *me*! My super-sniffer nose could smell a snack from miles away, so nothing ever surprised me!",
+  size: "Oh, I was HUGE! Imagine two school buses lined up nose to tail, that's how long I was, about 40 feet! And my hip was as tall as an elephant, around 12 feet high – perfect for spotting my snacks in the Cretaceous period jungle!",
+  friends: "Friends? Hmm, well, most other creatures in the Cretaceous period knew to keep a *respectful* distance from someone as big and hungry as me! I was usually busy being the king of my territory, which is a very important job, you know!",
+  favorite: "ROAR! My absolute favorite thing was being the king of my jungle, the biggest, baddest dinosaur around! With my super strong sense of smell, I could sniff out a yummy snack from miles away, and then my incredible 12,800-pound bite force made dinner time so easy! It's great to be on top!",
+  "beat-up": "A Triceratops? Oh, those guys had some serious pointy horns, and they could be quite grumpy! But with my incredibly powerful bite, which was strong enough to crush a car, I was usually the one who decided who was boss around here!",
+  roar: "Oh, absolutely I roared! Well, maybe not exactly a *Hollywood* roar, but scientists think I probably made super deep, rumbling sounds that shook the ground – like a giant alligator mixed with a very grumpy bird! Imagine a sound so powerful, you *felt* it in your bones, that was me!",
+  extinction: "Oh, that's a bit of a sad story, little hatchlings. A *giant* space rock, bigger than a mountain, crashed into our world a very, very long time ago! It made the sky dark and the air chilly, and things changed so fast that my friends and I just couldn't keep up.",
+  arms: "(Sighs dramatically, trying to hide them a bit) Oh, yes, my tiny arms were, well, they were *meant* to be that small! It was a design choice, I tell you! I mostly used my giant head and powerful legs, so who needs big arms anyway... right?",
+  weather: "Oh, the weather back in my day, during the Cretaceous period, was usually *super* warm and humid! It was perfect for growing all sorts of big, leafy plants, which meant lots of yummy snacks for the plant-eaters, and then... *them* for me! We didn't have to worry about cold winters or snow, which was great for a big guy like me.",
 };
 
 const BUTTON_COLORS = [
@@ -418,6 +418,10 @@ export default function KioskApp() {
   const countdownTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Track which quick question buttons have been used this session.
+  // If clicked again, we let the API generate a fresh answer.
+  const askedQuickQuestionsRef = useRef<Set<string>>(new Set());
+
   // ---- Fact ticker rotation ----
   useEffect(() => {
     if (mode !== "attract") return;
@@ -589,6 +593,16 @@ export default function KioskApp() {
   // ---- Send quick canned response (no API call) ----
   const sendQuickReply = useCallback(
     (questionId: string, questionLabel: string) => {
+      const alreadyAsked = askedQuickQuestionsRef.current.has(questionId);
+
+      if (alreadyAsked) {
+        // Second+ time we see this question in the same session: call the API.
+        sendMessage(questionLabel);
+        return;
+      }
+
+      // First time: reply locally to save tokens.
+      askedQuickQuestionsRef.current.add(questionId);
       const answer = QUICK_QUESTION_ANSWERS[questionId] || "[Answer not set yet]";
       const userMessage: ChatMessage = { role: "user", content: questionLabel };
       const assistantMessage: ChatMessage = { role: "assistant", content: answer };
@@ -601,7 +615,7 @@ export default function KioskApp() {
       // Return to idle after speaking animation
       setTimeout(() => setRexMood("idle"), 2000);
     },
-    [resetInactivityTimer]
+    [resetInactivityTimer, sendMessage]
   );
 
   // ---- Handle form submit ----
