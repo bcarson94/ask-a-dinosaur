@@ -52,11 +52,32 @@ export async function POST(request: NextRequest) {
 
     const lastMessage = messages[messages.length - 1];
 
-    const chat = model.startChat({ history });
-    const result = await chat.sendMessage(lastMessage.content);
-    const text = result.response.text();
+    // Retry up to 2 times for rate limit errors
+    let lastError: unknown;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const chat = model.startChat({ history });
+        const result = await chat.sendMessage(lastMessage.content);
+        const text = result.response.text();
+        return NextResponse.json({ response: text });
+      } catch (err) {
+        lastError = err;
+        const message = err instanceof Error ? err.message : String(err);
+        if (message.includes("429") || message.includes("Too Many Requests")) {
+          // Wait before retrying: 2s, then 4s
+          await new Promise((r) => setTimeout(r, (attempt + 1) * 2000));
+          continue;
+        }
+        // Non-retryable error, break immediately
+        break;
+      }
+    }
 
-    return NextResponse.json({ response: text });
+    console.error("Chat API error:", lastError);
+    return NextResponse.json(
+      { error: "Failed to get response from Rex" },
+      { status: 500 }
+    );
   } catch (error) {
     console.error("Chat API error:", error);
     return NextResponse.json(
