@@ -707,7 +707,7 @@ export default function KioskApp() {
       </div>
 
       {/* Right panel: Chat */}
-      <div className="relative z-10 w-[65%] flex flex-col h-full p-4 pl-0">
+      <div className="relative z-10 w-[65%] flex flex-col h-full p-4 pl-0 pt-16 md:pt-12">
         {/* Chat history */}
         <div className="flex-1 overflow-y-auto chat-scroll pr-4 pb-4 min-h-0">
           {messages.length === 0 && !isLoading && (
