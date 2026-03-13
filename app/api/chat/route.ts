@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
       model: "gemini-2.5-flash",
       systemInstruction: SYSTEM_PROMPT,
       generationConfig: {
-        maxOutputTokens: 200,
+        maxOutputTokens: 500,
       },
     });
 
