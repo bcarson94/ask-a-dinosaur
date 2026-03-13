@@ -50,6 +50,12 @@ export async function POST(request: NextRequest) {
       parts: [{ text: msg.content }],
     }));
 
+    // Gemini requires the first message in history to be a user message.
+    // Ensure we never send a history that begins with a model message.
+    while (history.length && history[0].role !== "user") {
+      history.shift();
+    }
+
     const lastMessage = messages[messages.length - 1];
 
     // Retry up to 2 times for rate limit errors
