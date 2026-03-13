@@ -672,7 +672,7 @@ export default function KioskApp() {
 
   return (
     <div
-      className={`fixed inset-0 flex ${transitioning ? "animate-fade-out" : "animate-fade-in"}`}
+      className={`fixed inset-0 flex flex-col ${transitioning ? "animate-fade-out" : "animate-fade-in"}`}
       onTouchStart={handleWarningDismiss}
       onClick={handleWarningDismiss}
     >
@@ -689,27 +689,10 @@ export default function KioskApp() {
         Start Over
       </button>
 
-      {/* Left panel: Rex */}
-      <div className="relative z-10 w-[35%] flex flex-col items-center justify-center p-6">
-        <div className="w-full max-w-[350px]">
-          <RexCharacter mood={rexMood} />
-        </div>
-
-        {/* Thinking indicator */}
-        {isLoading && (
-          <div className="mt-4 flex items-center gap-1 text-[#f5e6c8] text-xl font-semibold">
-            <span>Rex is thinking</span>
-            <span className="dot-1 inline-block w-2 h-2 bg-[#f5e6c8] rounded-full" />
-            <span className="dot-2 inline-block w-2 h-2 bg-[#f5e6c8] rounded-full" />
-            <span className="dot-3 inline-block w-2 h-2 bg-[#f5e6c8] rounded-full" />
-          </div>
-        )}
-      </div>
-
-      {/* Right panel: Chat */}
-      <div className="relative z-10 w-[65%] flex flex-col h-full p-4 pl-0 pt-20 md:pt-16">
+      {/* Chat Section */}
+      <div className="relative z-10 flex flex-col w-full h-full p-4">
         {/* Chat history */}
-        <div className="flex-1 overflow-y-auto chat-scroll pr-4 pb-4 min-h-0">
+        <div className="flex-1 overflow-y-auto chat-scroll pr-4 pb-4">
           {messages.length === 0 && !isLoading && (
             <div className="flex items-center justify-center h-full">
               <p className="text-2xl text-[#f5e6c8] opacity-60 text-center">
