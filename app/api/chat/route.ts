@@ -74,14 +74,17 @@ export async function POST(request: NextRequest) {
     }
 
     console.error("Chat API error:", lastError);
+    const message =
+      lastError instanceof Error ? lastError.message : String(lastError);
     return NextResponse.json(
-      { error: "Failed to get response from Rex" },
+      { error: `Failed to get response from Rex (${message})` },
       { status: 500 }
     );
   } catch (error) {
     console.error("Chat API error:", error);
+    const message = error instanceof Error ? error.message : String(error);
     return NextResponse.json(
-      { error: "Failed to get response from Rex" },
+      { error: `Failed to get response from Rex (${message})` },
       { status: 500 }
     );
   }

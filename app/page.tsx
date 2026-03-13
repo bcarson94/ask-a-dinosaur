@@ -487,7 +487,11 @@ export default function KioskApp() {
           body: JSON.stringify({ messages: contextMessages }),
         });
 
-        if (!res.ok) throw new Error("API error");
+        if (!res.ok) {
+          const errorBody = await res.json().catch(() => null);
+          const message = errorBody?.error || "API error";
+          throw new Error(message);
+        }
 
         const data = await res.json();
         const assistantMessage: ChatMessage = {
@@ -501,7 +505,10 @@ export default function KioskApp() {
 
         // Return to idle after speaking animation
         setTimeout(() => setRexMood("idle"), 2000);
-      } catch {
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+
         setConsecutiveErrors((prev) => {
           const next = prev + 1;
           if (next >= 3) {
@@ -510,8 +517,7 @@ export default function KioskApp() {
               ...prev,
               {
                 role: "assistant",
-                content:
-                  "Rex is taking a nap right now. Come back soon!",
+                content: "Rex is taking a nap right now. Come back soon!",
               },
             ]);
           } else {
@@ -519,8 +525,7 @@ export default function KioskApp() {
               ...prev,
               {
                 role: "assistant",
-                content:
-                  "Ugh, my tiny brain is having a moment... try asking me again!",
+                content: `Ugh, my tiny brain is having a moment (${errorMessage})... try asking me again!`,
               },
             ]);
           }
