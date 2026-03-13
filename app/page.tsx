@@ -607,13 +607,21 @@ export default function KioskApp() {
       const userMessage: ChatMessage = { role: "user", content: questionLabel };
       const assistantMessage: ChatMessage = { role: "assistant", content: answer };
 
-      setMessages((prev) => [...prev, userMessage, assistantMessage]);
-      setRexMood("speaking");
+      setMessages((prev) => [...prev, userMessage]);
+      setIsLoading(true);
+      setRexMood("thinking");
       setConsecutiveErrors(0);
       resetInactivityTimer();
 
-      // Return to idle after speaking animation
-      setTimeout(() => setRexMood("idle"), 2000);
+      // Fake a short thinking delay so it feels like a real API call.
+      setTimeout(() => {
+        setMessages((prev) => [...prev, assistantMessage]);
+        setRexMood("speaking");
+        setIsLoading(false);
+
+        // Return to idle after speaking animation
+        setTimeout(() => setRexMood("idle"), 2000);
+      }, 800);
     },
     [resetInactivityTimer, sendMessage]
   );
