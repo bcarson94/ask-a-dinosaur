@@ -689,77 +689,96 @@ export default function KioskApp() {
         Start Over
       </button>
 
-      {/* Chat Section */}
-      <div className="relative z-10 flex flex-col w-full h-full p-4">
-        {/* Chat history */}
-        <div className="flex-1 overflow-y-auto chat-scroll pr-4 pb-4">
-          {messages.length === 0 && !isLoading && (
-            <div className="flex items-center justify-center h-full">
-              <p className="text-2xl text-[#f5e6c8] opacity-60 text-center">
-                Ask Rex a question!
-                <br />
-                <span className="text-lg">Tap a button below or type your own.</span>
-              </p>
+      {/* Main content: Rex + buttons on left, chat on right */}
+      <div className="relative z-10 flex w-full h-full p-4 gap-4">
+        {/* Left column: Rex character + quick question buttons */}
+        <div className="flex-shrink-0 w-[320px] flex flex-col overflow-hidden">
+          {/* Rex */}
+          <div className="flex-shrink-0 flex flex-col items-center">
+            <div className="w-[240px] h-[280px]">
+              <RexCharacter mood={rexMood} />
             </div>
-          )}
-
-          {messages.map((msg, i) => (
-            <div
-              key={i}
-              className={`mb-3 flex ${msg.role === "user" ? "justify-end" : "justify-start"} animate-bubble-pop`}
-            >
-              <div
-                className={`max-w-[85%] rounded-2xl px-5 py-4 shadow-lg ${
-                  msg.role === "assistant"
-                    ? "bg-[#f5e6c8] text-[#3d2b1f]"
-                    : "bg-[#a8c5a0] text-[#1a2e1a]"
-                }`}
-                style={{ fontSize: msg.role === "assistant" ? "22px" : "20px" }}
-              >
-                {msg.role === "assistant" && (
-                  <span className="font-bold text-[#5b8c3e] mr-1">Rex:</span>
-                )}
-                {msg.content}
+            {isLoading && (
+              <div className="flex gap-2 mt-1">
+                <div className="w-3 h-3 rounded-full bg-[#f5e6c8] dot-1" />
+                <div className="w-3 h-3 rounded-full bg-[#f5e6c8] dot-2" />
+                <div className="w-3 h-3 rounded-full bg-[#f5e6c8] dot-3" />
               </div>
-            </div>
-          ))}
-          <div ref={chatEndRef} />
-        </div>
-
-        {/* Input area */}
-        <div className="flex-shrink-0 space-y-3 pr-4 pb-2">
-          {/* Text input */}
-          <form onSubmit={handleSubmit} className="flex gap-3">
-            <input
-              ref={inputRef}
-              type="text"
-              value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
-              placeholder="Type your own question..."
-              disabled={isLoading || consecutiveErrors >= 3}
-              className="flex-1 h-[56px] px-5 rounded-xl bg-white/90 text-[#3d2b1f] text-xl placeholder:text-[#8a7a6a] outline-none focus:ring-2 focus:ring-[#e8722a] disabled:opacity-50 disabled:cursor-not-allowed"
-            />
-            <button
-              type="submit"
-              disabled={isLoading || !inputValue.trim() || consecutiveErrors >= 3}
-              className="h-[56px] px-8 rounded-xl bg-[#e8722a] text-white text-xl font-bold active:bg-[#c55f22] disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg"
-            >
-              ASK REX!
-            </button>
-          </form>
+            )}
+          </div>
 
           {/* Quick question buttons */}
-          <div className="grid grid-cols-2 gap-2.5">
+          <div className="flex-1 overflow-y-auto chat-scroll mt-3 space-y-2 pr-1 pb-2">
             {QUICK_QUESTIONS.map((q, i) => (
               <button
                 key={q.id}
                 onClick={() => sendQuickReply(q.id, q.label)}
                 disabled={isLoading || consecutiveErrors >= 3}
-                className={`min-h-[60px] px-4 py-3 rounded-xl text-white font-semibold text-lg text-left leading-snug shadow-md transition-transform active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed ${BUTTON_COLORS[i]}`}
+                className={`w-full min-h-[52px] px-4 py-3 rounded-xl text-white font-semibold text-base text-left leading-snug shadow-md transition-transform active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed ${BUTTON_COLORS[i]}`}
               >
                 {q.label}
               </button>
             ))}
+          </div>
+        </div>
+
+        {/* Right column: chat + text input */}
+        <div className="flex-1 flex flex-col min-w-0">
+          {/* Chat history */}
+          <div className="flex-1 overflow-y-auto chat-scroll pr-2 pt-12 pb-4">
+            {messages.length === 0 && !isLoading && (
+              <div className="flex items-center justify-center h-full">
+                <p className="text-2xl text-[#f5e6c8] opacity-60 text-center">
+                  Ask Rex a question!
+                  <br />
+                  <span className="text-lg">Tap a button below or type your own.</span>
+                </p>
+              </div>
+            )}
+
+            {messages.map((msg, i) => (
+              <div
+                key={i}
+                className={`mb-3 flex ${msg.role === "user" ? "justify-end" : "justify-start"} animate-bubble-pop`}
+              >
+                <div
+                  className={`max-w-[85%] rounded-2xl px-5 py-4 shadow-lg ${
+                    msg.role === "assistant"
+                      ? "bg-[#f5e6c8] text-[#3d2b1f]"
+                      : "bg-[#a8c5a0] text-[#1a2e1a]"
+                  }`}
+                  style={{ fontSize: msg.role === "assistant" ? "22px" : "20px" }}
+                >
+                  {msg.role === "assistant" && (
+                    <span className="font-bold text-[#5b8c3e] mr-1">Rex:</span>
+                  )}
+                  {msg.content}
+                </div>
+              </div>
+            ))}
+            <div ref={chatEndRef} />
+          </div>
+
+          {/* Text input */}
+          <div className="flex-shrink-0 pb-2">
+            <form onSubmit={handleSubmit} className="flex gap-3">
+              <input
+                ref={inputRef}
+                type="text"
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                placeholder="Type your own question..."
+                disabled={isLoading || consecutiveErrors >= 3}
+                className="flex-1 h-[56px] px-5 rounded-xl bg-white/90 text-[#3d2b1f] text-xl placeholder:text-[#8a7a6a] outline-none focus:ring-2 focus:ring-[#e8722a] disabled:opacity-50 disabled:cursor-not-allowed"
+              />
+              <button
+                type="submit"
+                disabled={isLoading || !inputValue.trim() || consecutiveErrors >= 3}
+                className="h-[56px] px-8 rounded-xl bg-[#e8722a] text-white text-xl font-bold active:bg-[#c55f22] disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg"
+              >
+                ASK REX!
+              </button>
+            </form>
           </div>
         </div>
       </div>
