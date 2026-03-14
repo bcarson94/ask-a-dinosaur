@@ -79,6 +79,9 @@ export function useVoice() {
       setVoiceState("listening");
       setInterimTranscript("");
 
+      let lastTranscript = "";
+      let gotFinalResult = false;
+
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       recognition.onresult = (event: any) => {
         let interim = "";
@@ -92,7 +95,11 @@ export function useVoice() {
           }
         }
 
+        // Track the best transcript we've seen
+        lastTranscript = final || interim || lastTranscript;
+
         if (final) {
+          gotFinalResult = true;
           clearListenTimeout();
           setInterimTranscript("");
           setVoiceState("processing");
@@ -115,11 +122,19 @@ export function useVoice() {
       };
 
       recognition.onend = () => {
-        // Only reset if THIS recognition instance is still the active one.
-        // Prevents a stale onend from an aborted previous instance from
-        // killing the new listening session.
-        if (recognitionRef.current === recognition) {
-          clearListenTimeout();
+        // Only act if THIS recognition instance is still the active one
+        if (recognitionRef.current !== recognition) return;
+
+        clearListenTimeout();
+
+        // If we got interim text but no final result, submit what we have
+        if (!gotFinalResult && lastTranscript.trim()) {
+          setInterimTranscript("");
+          setVoiceState("processing");
+          recognitionRef.current = null;
+          onResultRef.current?.(lastTranscript.trim());
+        } else if (!gotFinalResult) {
+          // No speech detected at all — reset to idle
           setVoiceState("idle");
           setInterimTranscript("");
           recognitionRef.current = null;
