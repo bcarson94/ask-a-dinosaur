@@ -85,7 +85,7 @@ export async function POST(request: NextRequest) {
     // Wrap PCM data in a WAV header
     const wavBuffer = createWavBuffer(pcmBuffer, 24000, 1, 16);
 
-    return new NextResponse(wavBuffer, {
+    return new NextResponse(new Uint8Array(wavBuffer), {
       status: 200,
       headers: {
         "Content-Type": "audio/wav",

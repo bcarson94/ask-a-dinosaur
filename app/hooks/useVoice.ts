@@ -2,12 +2,16 @@
 
 import { useState, useRef, useCallback, useEffect } from "react";
 
-// Chromium exposes SpeechRecognition under the webkit prefix
+// Web Speech API types (not included in default TS DOM lib)
+/* eslint-disable @typescript-eslint/no-explicit-any */
+type SpeechRecognitionType = any;
 declare global {
   interface Window {
-    webkitSpeechRecognition: typeof SpeechRecognition;
+    SpeechRecognition: new () => SpeechRecognitionType;
+    webkitSpeechRecognition: new () => SpeechRecognitionType;
   }
 }
+/* eslint-enable @typescript-eslint/no-explicit-any */
 
 export type VoiceState = "idle" | "listening" | "processing" | "speaking";
 
@@ -18,7 +22,7 @@ export function useVoice() {
   const [voiceState, setVoiceState] = useState<VoiceState>("idle");
   const [interimTranscript, setInterimTranscript] = useState("");
 
-  const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const recognitionRef = useRef<SpeechRecognitionType | null>(null);
   const listenTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onResultRef = useRef<((transcript: string) => void) | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -75,7 +79,8 @@ export function useVoice() {
       setVoiceState("listening");
       setInterimTranscript("");
 
-      recognition.onresult = (event: SpeechRecognitionEvent) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      recognition.onresult = (event: any) => {
         let interim = "";
         let final = "";
         for (let i = event.resultIndex; i < event.results.length; i++) {
