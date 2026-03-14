@@ -429,6 +429,7 @@ export default function KioskApp() {
     voiceSupported,
     voiceState,
     transcript,
+    micError,
     startListening,
     stopAndSubmit,
     cancelListening,
@@ -809,6 +810,13 @@ export default function KioskApp() {
 
           {/* Input area */}
           <div className="flex-shrink-0 pb-2 space-y-3">
+            {/* Mic error message */}
+            {micError && (
+              <div className="px-4 py-3 rounded-xl bg-red-500/80 backdrop-blur-sm animate-fade-in">
+                <p className="text-white text-lg font-medium">{micError}</p>
+              </div>
+            )}
+
             {/* Voice mode: live transcript + big mic + send */}
             {voiceState === "listening" && (
               <div className="animate-fade-in space-y-3">

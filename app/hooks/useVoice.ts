@@ -19,6 +19,7 @@ export function useVoice() {
   const [voiceSupported, setVoiceSupported] = useState(false);
   const [voiceState, setVoiceState] = useState<VoiceState>("idle");
   const [transcript, setTranscript] = useState("");
+  const [micError, setMicError] = useState<string | null>(null);
 
   const recognitionRef = useRef<SpeechRecognitionType | null>(null);
   const transcriptRef = useRef("");
@@ -31,16 +32,31 @@ export function useVoice() {
     setVoiceSupported(!!SpeechRecognitionCtor);
   }, []);
 
-  /** Start recording. Stays on until you call stopAndSubmit or cancelListening. */
-  const startListening = useCallback(() => {
+  /** Start recording. Requests mic permission first. Stays on until you call stopAndSubmit or cancelListening. */
+  const startListening = useCallback(async () => {
     const SpeechRecognitionCtor =
       window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognitionCtor) return;
+
+    setMicError(null);
 
     // Cancel any playing audio
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current = null;
+    }
+
+    // Request mic permission explicitly BEFORE starting recognition
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Permission granted — stop the stream immediately (recognition will open its own)
+      stream.getTracks().forEach((t) => t.stop());
+    } catch (err) {
+      console.error("Microphone permission denied:", err);
+      setMicError(
+        "Microphone access denied. Please allow microphone access in your browser settings."
+      );
+      return;
     }
 
     // Reset
@@ -67,9 +83,25 @@ export function useVoice() {
     recognition.onerror = (e: any) => {
       console.warn("Speech recognition error:", e?.error || e);
       if (e?.error === "aborted") return;
+      if (e?.error === "not-allowed") {
+        setMicError("Microphone access denied.");
+        setVoiceState("idle");
+        recognitionRef.current = null;
+        return;
+      }
+      if (e?.error === "no-speech") {
+        // Browser gave up waiting for speech — just restart
+        return;
+      }
+      if (e?.error === "network") {
+        setMicError("Speech recognition needs an internet connection.");
+        setVoiceState("idle");
+        recognitionRef.current = null;
+        return;
+      }
     };
 
-    // If the browser kills recognition (network hiccup, etc), restart it
+    // If the browser kills recognition (network hiccup, silence timeout, etc), restart it
     recognition.onend = () => {
       if (recognitionRef.current === recognition) {
         // Browser auto-stopped — restart to keep listening
@@ -88,6 +120,7 @@ export function useVoice() {
       recognition.start();
     } catch (e) {
       console.error("Failed to start speech recognition:", e);
+      setMicError("Failed to start speech recognition.");
       setVoiceState("idle");
       recognitionRef.current = null;
     }
@@ -199,6 +232,7 @@ export function useVoice() {
     voiceSupported,
     voiceState,
     transcript,
+    micError,
     startListening,
     stopAndSubmit,
     cancelListening,
