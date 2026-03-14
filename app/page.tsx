@@ -428,9 +428,10 @@ export default function KioskApp() {
   const {
     voiceSupported,
     voiceState,
-    interimTranscript,
+    transcript,
     startListening,
-    stopListening,
+    stopAndSubmit,
+    cancelListening,
     speak,
     cancelSpeech,
   } = useVoice();
@@ -656,23 +657,28 @@ export default function KioskApp() {
     sendMessage(inputValue);
   };
 
-  // ---- Handle voice mic tap ----
-  const handleMicTap = useCallback(() => {
-    if (voiceState === "listening") {
-      stopListening();
-      return;
-    }
+  // ---- Handle voice mic toggle ----
+  const handleMicToggle = useCallback(() => {
     if (voiceState === "speaking") {
       cancelSpeech();
       setRexMood("idle");
       return;
     }
+    if (voiceState === "listening") {
+      cancelListening();
+      return;
+    }
     if (isLoading || consecutiveErrors >= 3) return;
+    startListening();
+  }, [voiceState, isLoading, consecutiveErrors, startListening, cancelListening, cancelSpeech]);
 
-    startListening((transcript) => {
-      sendMessage(transcript);
-    });
-  }, [voiceState, isLoading, consecutiveErrors, startListening, stopListening, cancelSpeech, sendMessage]);
+  // ---- Submit voice transcript ----
+  const handleVoiceSubmit = useCallback(() => {
+    const text = stopAndSubmit();
+    if (text) {
+      sendMessage(text);
+    }
+  }, [stopAndSubmit, sendMessage]);
 
   // ==================== ATTRACT MODE ====================
 
@@ -801,81 +807,104 @@ export default function KioskApp() {
             <div ref={chatEndRef} />
           </div>
 
-          {/* Input area with mic button */}
-          <div className="flex-shrink-0 pb-2 space-y-2">
-            {/* Interim transcript display */}
+          {/* Input area */}
+          <div className="flex-shrink-0 pb-2 space-y-3">
+            {/* Voice mode: live transcript + big mic + send */}
             {voiceState === "listening" && (
-              <div className="px-4 py-3 rounded-xl bg-black/30 backdrop-blur-sm animate-fade-in">
-                <p className="text-[#f5e6c8] text-lg italic">
-                  {interimTranscript || "Listening..."}
-                </p>
+              <div className="animate-fade-in space-y-3">
+                {/* Live transcript */}
+                <div className="px-4 py-3 rounded-xl bg-black/30 backdrop-blur-sm min-h-[56px] flex items-center">
+                  <p className="text-[#f5e6c8] text-xl">
+                    {transcript || (
+                      <span className="italic opacity-70">Start talking...</span>
+                    )}
+                  </p>
+                </div>
+                {/* Stop + Send buttons */}
+                <div className="flex gap-3">
+                  <button
+                    type="button"
+                    onClick={handleMicToggle}
+                    className="h-[64px] flex-1 rounded-xl bg-red-500 text-white text-xl font-bold flex items-center justify-center gap-3 active:bg-red-600 transition-colors shadow-lg animate-mic-pulse"
+                  >
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="6" y="4" width="12" height="16" rx="2" fill="white" />
+                    </svg>
+                    CANCEL
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleVoiceSubmit}
+                    disabled={!transcript.trim()}
+                    className="h-[64px] flex-1 rounded-xl bg-[#e8722a] text-white text-xl font-bold flex items-center justify-center gap-3 active:bg-[#c55f22] disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-lg"
+                  >
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <line x1="22" y1="2" x2="11" y2="13" />
+                      <polygon points="22 2 15 22 11 13 2 9 22 2" fill="white" />
+                    </svg>
+                    ASK REX!
+                  </button>
+                </div>
               </div>
             )}
 
-            <div className="flex gap-3 items-center">
-              {/* Mic button */}
-              {voiceSupported && (
-                <button
-                  type="button"
-                  onClick={handleMicTap}
-                  disabled={isLoading && voiceState !== "speaking"}
-                  className={`flex-shrink-0 w-[56px] h-[56px] rounded-full flex items-center justify-center transition-colors shadow-lg ${
-                    voiceState === "listening"
-                      ? "bg-red-500 animate-mic-pulse"
-                      : voiceState === "speaking"
-                      ? "bg-[#e8722a]"
-                      : "bg-[#2a9d8f] active:bg-[#228076]"
-                  } disabled:opacity-50 disabled:cursor-not-allowed`}
-                >
-                  {voiceState === "listening" ? (
-                    /* Mic active icon */
-                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" fill="white" />
-                      <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-                      <line x1="12" y1="19" x2="12" y2="23" />
-                      <line x1="8" y1="23" x2="16" y2="23" />
-                    </svg>
-                  ) : voiceState === "speaking" ? (
-                    /* Sound wave bars (tap to stop) */
-                    <div className="flex items-end gap-[3px] h-6">
-                      <div className="w-[3px] bg-white rounded-full sound-bar" style={{ height: "100%", animationDelay: "0s" }} />
-                      <div className="w-[3px] bg-white rounded-full sound-bar" style={{ height: "100%", animationDelay: "0.15s" }} />
-                      <div className="w-[3px] bg-white rounded-full sound-bar" style={{ height: "100%", animationDelay: "0.3s" }} />
-                      <div className="w-[3px] bg-white rounded-full sound-bar" style={{ height: "100%", animationDelay: "0.45s" }} />
-                      <div className="w-[3px] bg-white rounded-full sound-bar" style={{ height: "100%", animationDelay: "0.6s" }} />
-                    </div>
-                  ) : (
-                    /* Mic idle icon */
-                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
-                      <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-                      <line x1="12" y1="19" x2="12" y2="23" />
-                      <line x1="8" y1="23" x2="16" y2="23" />
-                    </svg>
-                  )}
-                </button>
-              )}
+            {/* Default mode: mic button + text input */}
+            {voiceState !== "listening" && (
+              <div className="flex gap-3 items-center">
+                {/* Big mic button */}
+                {voiceSupported && (
+                  <button
+                    type="button"
+                    onClick={handleMicToggle}
+                    disabled={(isLoading || consecutiveErrors >= 3) && voiceState !== "speaking"}
+                    className={`flex-shrink-0 w-[64px] h-[64px] rounded-full flex items-center justify-center transition-colors shadow-lg ${
+                      voiceState === "speaking"
+                        ? "bg-[#e8722a]"
+                        : "bg-[#2a9d8f] active:bg-[#228076]"
+                    } disabled:opacity-50 disabled:cursor-not-allowed`}
+                  >
+                    {voiceState === "speaking" ? (
+                      /* Sound wave bars (tap to stop) */
+                      <div className="flex items-end gap-[3px] h-7">
+                        <div className="w-[3px] bg-white rounded-full sound-bar" style={{ height: "100%", animationDelay: "0s" }} />
+                        <div className="w-[3px] bg-white rounded-full sound-bar" style={{ height: "100%", animationDelay: "0.15s" }} />
+                        <div className="w-[3px] bg-white rounded-full sound-bar" style={{ height: "100%", animationDelay: "0.3s" }} />
+                        <div className="w-[3px] bg-white rounded-full sound-bar" style={{ height: "100%", animationDelay: "0.45s" }} />
+                        <div className="w-[3px] bg-white rounded-full sound-bar" style={{ height: "100%", animationDelay: "0.6s" }} />
+                      </div>
+                    ) : (
+                      /* Mic idle icon */
+                      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+                        <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                        <line x1="12" y1="19" x2="12" y2="23" />
+                        <line x1="8" y1="23" x2="16" y2="23" />
+                      </svg>
+                    )}
+                  </button>
+                )}
 
-              {/* Text input */}
-              <form onSubmit={handleSubmit} className="flex-1 flex gap-3">
-                <input
-                  ref={inputRef}
-                  type="text"
-                  value={inputValue}
-                  onChange={(e) => setInputValue(e.target.value)}
-                  placeholder="Type your own question..."
-                  disabled={isLoading || consecutiveErrors >= 3 || voiceState === "listening"}
-                  className="flex-1 h-[56px] px-5 rounded-xl bg-white/90 text-[#3d2b1f] text-xl placeholder:text-[#8a7a6a] outline-none focus:ring-2 focus:ring-[#e8722a] disabled:opacity-50 disabled:cursor-not-allowed"
-                />
-                <button
-                  type="submit"
-                  disabled={isLoading || !inputValue.trim() || consecutiveErrors >= 3}
-                  className="h-[56px] px-8 rounded-xl bg-[#e8722a] text-white text-xl font-bold active:bg-[#c55f22] disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg"
-                >
-                  ASK REX!
-                </button>
-              </form>
-            </div>
+                {/* Text input */}
+                <form onSubmit={handleSubmit} className="flex-1 flex gap-3">
+                  <input
+                    ref={inputRef}
+                    type="text"
+                    value={inputValue}
+                    onChange={(e) => setInputValue(e.target.value)}
+                    placeholder="Type your own question..."
+                    disabled={isLoading || consecutiveErrors >= 3}
+                    className="flex-1 h-[64px] px-5 rounded-xl bg-white/90 text-[#3d2b1f] text-xl placeholder:text-[#8a7a6a] outline-none focus:ring-2 focus:ring-[#e8722a] disabled:opacity-50 disabled:cursor-not-allowed"
+                  />
+                  <button
+                    type="submit"
+                    disabled={isLoading || !inputValue.trim() || consecutiveErrors >= 3}
+                    className="h-[64px] px-8 rounded-xl bg-[#e8722a] text-white text-xl font-bold active:bg-[#c55f22] disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg"
+                  >
+                    ASK REX!
+                  </button>
+                </form>
+              </div>
+            )}
           </div>
         </div>
       </div>
