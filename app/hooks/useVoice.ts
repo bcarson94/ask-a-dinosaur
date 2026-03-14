@@ -103,7 +103,11 @@ export function useVoice() {
         }
       };
 
-      recognition.onerror = () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      recognition.onerror = (e: any) => {
+        console.warn("Speech recognition error:", e?.error || e);
+        // "aborted" fires when we intentionally stop — don't reset state for that
+        if (e?.error === "aborted") return;
         clearListenTimeout();
         setVoiceState("idle");
         setInterimTranscript("");
@@ -111,8 +115,10 @@ export function useVoice() {
       };
 
       recognition.onend = () => {
-        // If we didn't get a final result, reset to idle
-        if (recognitionRef.current) {
+        // Only reset if THIS recognition instance is still the active one.
+        // Prevents a stale onend from an aborted previous instance from
+        // killing the new listening session.
+        if (recognitionRef.current === recognition) {
           clearListenTimeout();
           setVoiceState("idle");
           setInterimTranscript("");
@@ -120,7 +126,13 @@ export function useVoice() {
         }
       };
 
-      recognition.start();
+      try {
+        recognition.start();
+      } catch (e) {
+        console.error("Failed to start speech recognition:", e);
+        setVoiceState("idle");
+        recognitionRef.current = null;
+      }
 
       // Safety timeout: auto-stop after 10s
       listenTimeoutRef.current = setTimeout(() => {
