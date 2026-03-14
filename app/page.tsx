@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useVoice } from "./hooks/useVoice";
 
 // ==================== TYPES ====================
 
@@ -417,10 +418,22 @@ export default function KioskApp() {
   const inactivityTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const countdownTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const rexMoodTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Track which quick question buttons have been used this session.
   // If clicked again, we let the API generate a fresh answer.
   const askedQuickQuestionsRef = useRef<Set<string>>(new Set());
+
+  // Voice
+  const {
+    voiceSupported,
+    voiceState,
+    interimTranscript,
+    startListening,
+    stopListening,
+    speak,
+    cancelSpeech,
+  } = useVoice();
 
   // ---- Fact ticker rotation ----
   useEffect(() => {
@@ -438,6 +451,8 @@ export default function KioskApp() {
 
   // ---- Reset to attract mode ----
   const resetToAttract = useCallback(() => {
+    cancelSpeech();
+    if (rexMoodTimeoutRef.current) clearTimeout(rexMoodTimeoutRef.current);
     setTransitioning(true);
     setTimeout(() => {
       setMode("attract");
@@ -450,7 +465,7 @@ export default function KioskApp() {
       setConsecutiveErrors(0);
       setTransitioning(false);
     }, 300);
-  }, []);
+  }, [cancelSpeech]);
 
   // ---- Inactivity timer ----
   const resetInactivityTimer = useCallback(() => {
@@ -514,10 +529,21 @@ export default function KioskApp() {
     }
   }, [mode, transitioning]);
 
+  // ---- Helper: set Rex mood to speaking, then idle after TTS completes ----
+  const speakAsRex = useCallback(
+    async (text: string) => {
+      if (rexMoodTimeoutRef.current) clearTimeout(rexMoodTimeoutRef.current);
+      setRexMood("speaking");
+      await speak(text);
+      setRexMood("idle");
+    },
+    [speak]
+  );
+
   // ---- Send message to API ----
   const sendMessage = useCallback(
-    async (text: string) => {
-      if (isLoading || !text.trim()) return;
+    async (text: string): Promise<string | null> => {
+      if (isLoading || !text.trim()) return null;
 
       const userMessage: ChatMessage = { role: "user", content: text.trim() };
       const updatedMessages = [...messages, userMessage];
@@ -550,11 +576,12 @@ export default function KioskApp() {
         };
 
         setMessages((prev) => [...prev, assistantMessage]);
-        setRexMood("speaking");
         setConsecutiveErrors(0);
+        setIsLoading(false);
 
-        // Return to idle after speaking animation
-        setTimeout(() => setRexMood("idle"), 2000);
+        await speakAsRex(data.response);
+        resetInactivityTimer();
+        return data.response;
       } catch (error) {
         const errorMessage =
           error instanceof Error ? error.message : String(error);
@@ -562,7 +589,6 @@ export default function KioskApp() {
         setConsecutiveErrors((prev) => {
           const next = prev + 1;
           if (next >= 3) {
-            // Show offline fallback
             setMessages((prev) => [
               ...prev,
               {
@@ -582,12 +608,12 @@ export default function KioskApp() {
           return next;
         });
         setRexMood("idle");
-      } finally {
         setIsLoading(false);
         resetInactivityTimer();
+        return null;
       }
     },
-    [isLoading, messages, resetInactivityTimer]
+    [isLoading, messages, resetInactivityTimer, speakAsRex]
   );
 
   // ---- Send quick canned response (no API call) ----
@@ -614,16 +640,14 @@ export default function KioskApp() {
       resetInactivityTimer();
 
       // Fake a short thinking delay so it feels like a real API call.
-      setTimeout(() => {
+      setTimeout(async () => {
         setMessages((prev) => [...prev, assistantMessage]);
-        setRexMood("speaking");
         setIsLoading(false);
-
-        // Return to idle after speaking animation
-        setTimeout(() => setRexMood("idle"), 2000);
+        await speakAsRex(answer);
+        resetInactivityTimer();
       }, 800);
     },
-    [resetInactivityTimer, sendMessage]
+    [resetInactivityTimer, sendMessage, speakAsRex]
   );
 
   // ---- Handle form submit ----
@@ -631,6 +655,24 @@ export default function KioskApp() {
     e.preventDefault();
     sendMessage(inputValue);
   };
+
+  // ---- Handle voice mic tap ----
+  const handleMicTap = useCallback(() => {
+    if (voiceState === "listening") {
+      stopListening();
+      return;
+    }
+    if (voiceState === "speaking") {
+      cancelSpeech();
+      setRexMood("idle");
+      return;
+    }
+    if (isLoading || consecutiveErrors >= 3) return;
+
+    startListening((transcript) => {
+      sendMessage(transcript);
+    });
+  }, [voiceState, isLoading, consecutiveErrors, startListening, stopListening, cancelSpeech, sendMessage]);
 
   // ==================== ATTRACT MODE ====================
 
@@ -759,26 +801,81 @@ export default function KioskApp() {
             <div ref={chatEndRef} />
           </div>
 
-          {/* Text input */}
-          <div className="flex-shrink-0 pb-2">
-            <form onSubmit={handleSubmit} className="flex gap-3">
-              <input
-                ref={inputRef}
-                type="text"
-                value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
-                placeholder="Type your own question..."
-                disabled={isLoading || consecutiveErrors >= 3}
-                className="flex-1 h-[56px] px-5 rounded-xl bg-white/90 text-[#3d2b1f] text-xl placeholder:text-[#8a7a6a] outline-none focus:ring-2 focus:ring-[#e8722a] disabled:opacity-50 disabled:cursor-not-allowed"
-              />
-              <button
-                type="submit"
-                disabled={isLoading || !inputValue.trim() || consecutiveErrors >= 3}
-                className="h-[56px] px-8 rounded-xl bg-[#e8722a] text-white text-xl font-bold active:bg-[#c55f22] disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg"
-              >
-                ASK REX!
-              </button>
-            </form>
+          {/* Input area with mic button */}
+          <div className="flex-shrink-0 pb-2 space-y-2">
+            {/* Interim transcript display */}
+            {voiceState === "listening" && (
+              <div className="px-4 py-3 rounded-xl bg-black/30 backdrop-blur-sm animate-fade-in">
+                <p className="text-[#f5e6c8] text-lg italic">
+                  {interimTranscript || "Listening..."}
+                </p>
+              </div>
+            )}
+
+            <div className="flex gap-3 items-center">
+              {/* Mic button */}
+              {voiceSupported && (
+                <button
+                  type="button"
+                  onClick={handleMicTap}
+                  disabled={isLoading && voiceState !== "speaking"}
+                  className={`flex-shrink-0 w-[56px] h-[56px] rounded-full flex items-center justify-center transition-colors shadow-lg ${
+                    voiceState === "listening"
+                      ? "bg-red-500 animate-mic-pulse"
+                      : voiceState === "speaking"
+                      ? "bg-[#e8722a]"
+                      : "bg-[#2a9d8f] active:bg-[#228076]"
+                  } disabled:opacity-50 disabled:cursor-not-allowed`}
+                >
+                  {voiceState === "listening" ? (
+                    /* Mic active icon */
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" fill="white" />
+                      <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                      <line x1="12" y1="19" x2="12" y2="23" />
+                      <line x1="8" y1="23" x2="16" y2="23" />
+                    </svg>
+                  ) : voiceState === "speaking" ? (
+                    /* Sound wave bars (tap to stop) */
+                    <div className="flex items-end gap-[3px] h-6">
+                      <div className="w-[3px] bg-white rounded-full sound-bar" style={{ height: "100%", animationDelay: "0s" }} />
+                      <div className="w-[3px] bg-white rounded-full sound-bar" style={{ height: "100%", animationDelay: "0.15s" }} />
+                      <div className="w-[3px] bg-white rounded-full sound-bar" style={{ height: "100%", animationDelay: "0.3s" }} />
+                      <div className="w-[3px] bg-white rounded-full sound-bar" style={{ height: "100%", animationDelay: "0.45s" }} />
+                      <div className="w-[3px] bg-white rounded-full sound-bar" style={{ height: "100%", animationDelay: "0.6s" }} />
+                    </div>
+                  ) : (
+                    /* Mic idle icon */
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+                      <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                      <line x1="12" y1="19" x2="12" y2="23" />
+                      <line x1="8" y1="23" x2="16" y2="23" />
+                    </svg>
+                  )}
+                </button>
+              )}
+
+              {/* Text input */}
+              <form onSubmit={handleSubmit} className="flex-1 flex gap-3">
+                <input
+                  ref={inputRef}
+                  type="text"
+                  value={inputValue}
+                  onChange={(e) => setInputValue(e.target.value)}
+                  placeholder="Type your own question..."
+                  disabled={isLoading || consecutiveErrors >= 3 || voiceState === "listening"}
+                  className="flex-1 h-[56px] px-5 rounded-xl bg-white/90 text-[#3d2b1f] text-xl placeholder:text-[#8a7a6a] outline-none focus:ring-2 focus:ring-[#e8722a] disabled:opacity-50 disabled:cursor-not-allowed"
+                />
+                <button
+                  type="submit"
+                  disabled={isLoading || !inputValue.trim() || consecutiveErrors >= 3}
+                  className="h-[56px] px-8 rounded-xl bg-[#e8722a] text-white text-xl font-bold active:bg-[#c55f22] disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg"
+                >
+                  ASK REX!
+                </button>
+              </form>
+            </div>
           </div>
         </div>
       </div>
