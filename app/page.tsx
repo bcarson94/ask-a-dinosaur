@@ -428,7 +428,6 @@ export default function KioskApp() {
   const {
     voiceSupported,
     voiceState,
-    transcript,
     micError,
     startListening,
     stopAndSubmit,
@@ -674,8 +673,8 @@ export default function KioskApp() {
   }, [voiceState, isLoading, consecutiveErrors, startListening, cancelListening, cancelSpeech]);
 
   // ---- Submit voice transcript ----
-  const handleVoiceSubmit = useCallback(() => {
-    const text = stopAndSubmit();
+  const handleVoiceSubmit = useCallback(async () => {
+    const text = await stopAndSubmit();
     if (text) {
       sendMessage(text);
     }
@@ -817,23 +816,22 @@ export default function KioskApp() {
               </div>
             )}
 
-            {/* Voice mode: live transcript + big mic + send */}
+            {/* Voice mode: recording indicator + cancel/send */}
             {voiceState === "listening" && (
               <div className="animate-fade-in space-y-3">
-                {/* Live transcript */}
-                <div className="px-4 py-3 rounded-xl bg-black/30 backdrop-blur-sm min-h-[56px] flex items-center">
-                  <p className="text-[#f5e6c8] text-xl">
-                    {transcript || (
-                      <span className="italic opacity-70">Start talking...</span>
-                    )}
+                {/* Recording indicator */}
+                <div className="px-4 py-4 rounded-xl bg-black/30 backdrop-blur-sm flex items-center gap-3">
+                  <div className="w-4 h-4 rounded-full bg-red-500 animate-mic-pulse flex-shrink-0" />
+                  <p className="text-[#f5e6c8] text-xl font-medium">
+                    Recording... Ask your question, then tap &quot;Ask Rex!&quot;
                   </p>
                 </div>
-                {/* Stop + Send buttons */}
+                {/* Cancel + Send buttons */}
                 <div className="flex gap-3">
                   <button
                     type="button"
                     onClick={handleMicToggle}
-                    className="h-[64px] flex-1 rounded-xl bg-red-500 text-white text-xl font-bold flex items-center justify-center gap-3 active:bg-red-600 transition-colors shadow-lg animate-mic-pulse"
+                    className="h-[64px] flex-1 rounded-xl bg-red-500 text-white text-xl font-bold flex items-center justify-center gap-3 active:bg-red-600 transition-colors shadow-lg"
                   >
                     <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                       <rect x="6" y="4" width="12" height="16" rx="2" fill="white" />
@@ -843,8 +841,7 @@ export default function KioskApp() {
                   <button
                     type="button"
                     onClick={handleVoiceSubmit}
-                    disabled={!transcript.trim()}
-                    className="h-[64px] flex-1 rounded-xl bg-[#e8722a] text-white text-xl font-bold flex items-center justify-center gap-3 active:bg-[#c55f22] disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-lg"
+                    className="h-[64px] flex-1 rounded-xl bg-[#e8722a] text-white text-xl font-bold flex items-center justify-center gap-3 active:bg-[#c55f22] transition-colors shadow-lg"
                   >
                     <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                       <line x1="22" y1="2" x2="11" y2="13" />

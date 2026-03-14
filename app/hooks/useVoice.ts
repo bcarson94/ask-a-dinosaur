@@ -2,42 +2,29 @@
 
 import { useState, useRef, useCallback, useEffect } from "react";
 
-// Web Speech API types (not included in default TS DOM lib)
-/* eslint-disable @typescript-eslint/no-explicit-any */
-type SpeechRecognitionType = any;
-declare global {
-  interface Window {
-    SpeechRecognition: new () => SpeechRecognitionType;
-    webkitSpeechRecognition: new () => SpeechRecognitionType;
-  }
-}
-/* eslint-enable @typescript-eslint/no-explicit-any */
-
 export type VoiceState = "idle" | "listening" | "processing" | "speaking";
 
 export function useVoice() {
   const [voiceSupported, setVoiceSupported] = useState(false);
   const [voiceState, setVoiceState] = useState<VoiceState>("idle");
-  const [transcript, setTranscript] = useState("");
   const [micError, setMicError] = useState<string | null>(null);
 
-  const recognitionRef = useRef<SpeechRecognitionType | null>(null);
-  const transcriptRef = useRef("");
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const streamRef = useRef<MediaStream | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  // Detect STT support on mount
+  // Detect MediaRecorder support on mount
   useEffect(() => {
-    const SpeechRecognitionCtor =
-      window.SpeechRecognition || window.webkitSpeechRecognition;
-    setVoiceSupported(!!SpeechRecognitionCtor);
+    setVoiceSupported(
+      typeof navigator !== "undefined" &&
+        !!navigator.mediaDevices?.getUserMedia &&
+        typeof MediaRecorder !== "undefined"
+    );
   }, []);
 
-  /** Start recording. Requests mic permission first. Stays on until you call stopAndSubmit or cancelListening. */
+  /** Start recording audio via MediaRecorder. Stays on until stopAndSubmit or cancelListening. */
   const startListening = useCallback(async () => {
-    const SpeechRecognitionCtor =
-      window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognitionCtor) return;
-
     setMicError(null);
 
     // Cancel any playing audio
@@ -46,121 +33,110 @@ export function useVoice() {
       audioRef.current = null;
     }
 
-    // Request mic permission explicitly BEFORE starting recognition
+    // Get mic stream
+    let stream: MediaStream;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      // Permission granted — stop the stream immediately (recognition will open its own)
-      stream.getTracks().forEach((t) => t.stop());
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch (err) {
-      console.error("Microphone permission denied:", err);
+      console.error("Microphone access error:", err);
       setMicError(
         "Microphone access denied. Please allow microphone access in your browser settings."
       );
       return;
     }
 
-    // Reset
-    transcriptRef.current = "";
-    setTranscript("");
+    streamRef.current = stream;
+    chunksRef.current = [];
 
-    const recognition = new SpeechRecognitionCtor();
-    recognition.lang = "en-US";
-    recognition.interimResults = true;
-    recognition.continuous = true;
-    recognition.maxAlternatives = 1;
+    // Choose a supported mime type
+    const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+      ? "audio/webm;codecs=opus"
+      : MediaRecorder.isTypeSupported("audio/webm")
+      ? "audio/webm"
+      : "audio/mp4";
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    recognition.onresult = (event: any) => {
-      let full = "";
-      for (let i = 0; i < event.results.length; i++) {
-        full += event.results[i][0].transcript;
-      }
-      transcriptRef.current = full;
-      setTranscript(full);
-    };
+    const recorder = new MediaRecorder(stream, { mimeType });
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    recognition.onerror = (e: any) => {
-      console.warn("Speech recognition error:", e?.error || e);
-      if (e?.error === "aborted") return;
-      if (e?.error === "not-allowed") {
-        setMicError("Microphone access denied.");
-        setVoiceState("idle");
-        recognitionRef.current = null;
-        return;
-      }
-      if (e?.error === "no-speech") {
-        // Browser gave up waiting for speech — just restart
-        return;
-      }
-      if (e?.error === "network") {
-        setMicError("Speech recognition needs an internet connection.");
-        setVoiceState("idle");
-        recognitionRef.current = null;
-        return;
+    recorder.ondataavailable = (e) => {
+      if (e.data.size > 0) {
+        chunksRef.current.push(e.data);
       }
     };
 
-    // If the browser kills recognition (network hiccup, silence timeout, etc), restart it
-    recognition.onend = () => {
-      if (recognitionRef.current === recognition) {
-        // Browser auto-stopped — restart to keep listening
-        try {
-          recognition.start();
-        } catch {
-          // If restart fails, stay in listening state with what we have
-        }
-      }
-    };
-
-    recognitionRef.current = recognition;
+    mediaRecorderRef.current = recorder;
     setVoiceState("listening");
 
-    try {
-      recognition.start();
-    } catch (e) {
-      console.error("Failed to start speech recognition:", e);
-      setMicError("Failed to start speech recognition.");
-      setVoiceState("idle");
-      recognitionRef.current = null;
-    }
+    // Collect data every second so we have chunks ready when user stops
+    recorder.start(1000);
   }, []);
 
-  /** Stop recording and return the accumulated transcript. */
-  const stopAndSubmit = useCallback((): string => {
-    const text = transcriptRef.current.trim();
-
-    if (recognitionRef.current) {
-      const rec = recognitionRef.current;
-      recognitionRef.current = null; // Clear FIRST so onend won't restart
-      try {
-        rec.stop();
-      } catch {
-        // ignore
+  /** Stop recording and send audio to Gemini STT. Returns a promise with the transcript. */
+  const stopAndSubmit = useCallback(async (): Promise<string> => {
+    return new Promise((resolve) => {
+      const recorder = mediaRecorderRef.current;
+      if (!recorder || recorder.state === "inactive") {
+        setVoiceState("idle");
+        resolve("");
+        return;
       }
-    }
 
-    setVoiceState(text ? "processing" : "idle");
-    setTranscript("");
-    transcriptRef.current = "";
+      recorder.onstop = async () => {
+        // Stop the mic stream
+        streamRef.current?.getTracks().forEach((t) => t.stop());
+        streamRef.current = null;
+        mediaRecorderRef.current = null;
 
-    return text;
+        const chunks = chunksRef.current;
+        chunksRef.current = [];
+
+        if (chunks.length === 0) {
+          setVoiceState("idle");
+          resolve("");
+          return;
+        }
+
+        const audioBlob = new Blob(chunks, { type: recorder.mimeType });
+
+        // Send to STT API
+        setVoiceState("processing");
+        try {
+          const formData = new FormData();
+          formData.append("audio", audioBlob, "recording.webm");
+
+          const res = await fetch("/api/stt", {
+            method: "POST",
+            body: formData,
+          });
+
+          if (!res.ok) throw new Error("STT request failed");
+
+          const data = await res.json();
+          const transcript = data.transcript || "";
+          resolve(transcript);
+        } catch (err) {
+          console.error("STT error:", err);
+          setMicError("Failed to transcribe audio. Please try again.");
+          setVoiceState("idle");
+          resolve("");
+        }
+      };
+
+      recorder.stop();
+    });
   }, []);
 
   /** Cancel recording without submitting. */
   const cancelListening = useCallback(() => {
-    if (recognitionRef.current) {
-      const rec = recognitionRef.current;
-      recognitionRef.current = null;
-      try {
-        rec.abort();
-      } catch {
-        // ignore
-      }
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+      mediaRecorderRef.current.stop();
     }
+    mediaRecorderRef.current = null;
+    chunksRef.current = [];
+
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = null;
+
     setVoiceState("idle");
-    setTranscript("");
-    transcriptRef.current = "";
   }, []);
 
   /** Call the Gemini TTS API and play the returned audio. */
@@ -231,7 +207,6 @@ export function useVoice() {
   return {
     voiceSupported,
     voiceState,
-    transcript,
     micError,
     startListening,
     stopAndSubmit,
