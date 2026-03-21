@@ -531,11 +531,34 @@ export default function KioskApp() {
   }, [mode, transitioning]);
 
   // ---- Helper: set Rex mood to speaking, then idle after TTS completes ----
+  /** Play base64-encoded WAV audio directly. */
+  const playAudioBase64 = useCallback((base64: string): Promise<void> => {
+    return new Promise((resolve) => {
+      const binary = atob(base64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      const blob = new Blob([bytes], { type: "audio/wav" });
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+
+      audio.onended = () => { URL.revokeObjectURL(url); resolve(); };
+      audio.onerror = () => { URL.revokeObjectURL(url); resolve(); };
+      audio.play().catch(() => { URL.revokeObjectURL(url); resolve(); });
+    });
+  }, []);
+
+  /** Play base64 WAV audio as Rex. Falls back to TTS API if no audio provided. */
   const speakAsRex = useCallback(
-    async (text: string) => {
+    async (textOrAudio: string, audioBase64?: string | null) => {
       if (rexMoodTimeoutRef.current) clearTimeout(rexMoodTimeoutRef.current);
       setRexMood("speaking");
-      await speak(text);
+
+      if (audioBase64) {
+        await playAudioBase64(audioBase64);
+      } else {
+        await speak(textOrAudio);
+      }
+
       setRexMood("idle");
     },
     [speak]
@@ -580,7 +603,7 @@ export default function KioskApp() {
         setConsecutiveErrors(0);
         setIsLoading(false);
 
-        await speakAsRex(data.response);
+        await speakAsRex(data.response, data.audio);
         resetInactivityTimer();
         return data.response;
       } catch (error) {
