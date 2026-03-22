@@ -57,42 +57,34 @@ export async function POST(request: NextRequest) {
 
     const lastMessage = messages[messages.length - 1];
 
-    // Get text response from Gemini
-    let text: string;
+    // Retry up to 2 times for rate limit errors
     let lastError: unknown;
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
         const chat = model.startChat({ history });
         const result = await chat.sendMessage(lastMessage.content);
-        text = result.response.text();
-        break;
+        const text = result.response.text();
+        return NextResponse.json({ response: text });
       } catch (err) {
         lastError = err;
         const message = err instanceof Error ? err.message : String(err);
         if (message.includes("429") || message.includes("Too Many Requests")) {
+          // Wait before retrying: 2s, then 4s
           await new Promise((r) => setTimeout(r, (attempt + 1) * 2000));
           continue;
         }
+        // Non-retryable error, break immediately
         break;
       }
     }
 
-    if (!text!) {
-      console.error("Chat API error:", lastError);
-      const message = lastError instanceof Error ? lastError.message : String(lastError);
-      return NextResponse.json(
-        { error: `Failed to get response from Rex (${message})` },
-        { status: 500 }
-      );
-    }
-
-    // Generate TTS audio in parallel — don't block text response
-    const audioBase64 = await generateTTSAudio(text, apiKey);
-
-    return NextResponse.json({
-      response: text,
-      audio: audioBase64, // base64 WAV, or null if TTS failed
-    });
+    console.error("Chat API error:", lastError);
+    const message =
+      lastError instanceof Error ? lastError.message : String(lastError);
+    return NextResponse.json(
+      { error: `Failed to get response from Rex (${message})` },
+      { status: 500 }
+    );
   } catch (error) {
     console.error("Chat API error:", error);
     const message = error instanceof Error ? error.message : String(error);
@@ -101,80 +93,4 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
-}
-
-/** Call Gemini TTS and return base64-encoded WAV, or null on failure. */
-async function generateTTSAudio(text: string, apiKey: string): Promise<string | null> {
-  try {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`;
-
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [
-          { role: "user", parts: [{ text }] },
-        ],
-        generationConfig: {
-          responseModalities: ["AUDIO"],
-          speechConfig: {
-            voiceConfig: {
-              prebuiltVoiceConfig: {
-                voiceName: "Puck",
-              },
-            },
-          },
-        },
-      }),
-    });
-
-    if (!res.ok) return null;
-
-    const data = await res.json();
-    const part = data.candidates?.[0]?.content?.parts?.[0];
-    if (!part?.inlineData?.data) return null;
-
-    const pcmBuffer = Buffer.from(part.inlineData.data, "base64");
-    const wavBuffer = createWavBuffer(pcmBuffer, 24000, 1, 16);
-
-    // Return as base64 so it can travel in JSON
-    return Buffer.from(wavBuffer).toString("base64");
-  } catch (e) {
-    console.error("TTS generation failed:", e);
-    return null;
-  }
-}
-
-function createWavBuffer(
-  pcmData: Buffer,
-  sampleRate: number,
-  numChannels: number,
-  bitsPerSample: number
-): Buffer {
-  const byteRate = (sampleRate * numChannels * bitsPerSample) / 8;
-  const blockAlign = (numChannels * bitsPerSample) / 8;
-  const dataSize = pcmData.length;
-  const headerSize = 44;
-  const fileSize = headerSize + dataSize;
-
-  const buffer = Buffer.alloc(fileSize);
-
-  buffer.write("RIFF", 0);
-  buffer.writeUInt32LE(fileSize - 8, 4);
-  buffer.write("WAVE", 8);
-
-  buffer.write("fmt ", 12);
-  buffer.writeUInt32LE(16, 16);
-  buffer.writeUInt16LE(1, 20);
-  buffer.writeUInt16LE(numChannels, 22);
-  buffer.writeUInt32LE(sampleRate, 24);
-  buffer.writeUInt32LE(byteRate, 28);
-  buffer.writeUInt16LE(blockAlign, 32);
-  buffer.writeUInt16LE(bitsPerSample, 34);
-
-  buffer.write("data", 36);
-  buffer.writeUInt32LE(dataSize, 40);
-  pcmData.copy(buffer, 44);
-
-  return buffer;
 }
