@@ -32,6 +32,7 @@ export function useLiveVoice() {
   const [transcript, setTranscript] = useState<string | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
+  const reconnectRef = useRef<(() => void) | null>(null);
   const captureCtxRef = useRef<AudioContext | null>(null);
   const playbackCtxRef = useRef<AudioContext | null>(null);
   const playbackWorkletRef = useRef<AudioWorkletNode | null>(null);
@@ -171,18 +172,25 @@ export function useLiveVoice() {
     };
 
     ws.onerror = () => {
-      setError("Connection error. Please try again.");
-      setState("disconnected");
+      // onerror is always followed by onclose, so let onclose handle reconnect
     };
 
     ws.onclose = (event) => {
-      if (event.code !== 1000) {
-        setError(`Connection closed: ${event.reason || "unknown reason"}`);
-      }
-      setState("disconnected");
       cleanup();
+      if (event.code === 1000) {
+        // Normal close (user-initiated)
+        setState("disconnected");
+      } else {
+        // Unexpected close — auto-reconnect
+        console.warn("Live API disconnected unexpectedly, reconnecting...", event.reason);
+        setState("connecting");
+        setTimeout(() => reconnectRef.current?.(), 1000);
+      }
     };
   }, [enqueueAudio]);
+
+  // Keep reconnect ref in sync with latest connect function
+  reconnectRef.current = connect;
 
   /** Start AudioWorklet to capture mic and send PCM to WebSocket. */
   const startCapture = async (
