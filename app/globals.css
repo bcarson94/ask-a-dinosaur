@@ -130,6 +130,13 @@ body {
   50% { transform: rotate(2deg); }
 }
 
+/* Voice mode ring pulse for listening indicator */
+@keyframes voice-ring-pulse {
+  0% { transform: scale(1); opacity: 1; box-shadow: 0 0 0 0 rgba(74, 222, 128, 0.6); }
+  50% { transform: scale(1.08); opacity: 0.8; box-shadow: 0 0 0 20px rgba(74, 222, 128, 0); }
+  100% { transform: scale(1); opacity: 1; box-shadow: 0 0 0 0 rgba(74, 222, 128, 0); }
+}
+
 /* Mic button pulse when listening */
 @keyframes mic-pulse {
   0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.6); }
@@ -198,6 +205,10 @@ body {
 
 .animate-plant-sway {
   animation: plant-sway 4s ease-in-out infinite;
+}
+
+.voice-ring-pulse {
+  animation: voice-ring-pulse 2s ease-in-out infinite;
 }
 
 .animate-mic-pulse {

@@ -12,7 +12,7 @@ interface ChatMessage {
 }
 
 type RexMood = "idle" | "thinking" | "speaking";
-type AppMode = "attract" | "conversation";
+type AppMode = "attract" | "voice" | "text";
 
 // ==================== CONSTANTS ====================
 
@@ -103,7 +103,8 @@ const FUN_FACTS = [
   "T-Rex's brain was bigger than any other dinosaur's \u2014 they were smarties!",
 ];
 
-const INACTIVITY_TIMEOUT = 90;
+const INACTIVITY_TIMEOUT_TEXT = 90;
+const INACTIVITY_TIMEOUT_VOICE = 120;
 const WARNING_TIME = 10;
 
 // ==================== REX SVG COMPONENT ====================
@@ -469,6 +470,7 @@ export default function KioskApp() {
     cancelSpeech();
     liveVoice.disconnect();
     if (rexMoodTimeoutRef.current) clearTimeout(rexMoodTimeoutRef.current);
+    askedQuickQuestionsRef.current.clear();
     setTransitioning(true);
     setTimeout(() => {
       setMode("attract");
@@ -490,6 +492,8 @@ export default function KioskApp() {
     setShowWarning(false);
     setCountdown(WARNING_TIME);
 
+    const timeout = mode === "voice" ? INACTIVITY_TIMEOUT_VOICE : INACTIVITY_TIMEOUT_TEXT;
+
     inactivityTimer.current = setTimeout(() => {
       // Start warning countdown
       setShowWarning(true);
@@ -503,8 +507,8 @@ export default function KioskApp() {
           resetToAttract();
         }
       }, 1000);
-    }, (INACTIVITY_TIMEOUT - WARNING_TIME) * 1000);
-  }, [resetToAttract]);
+    }, (timeout - WARNING_TIME) * 1000);
+  }, [resetToAttract, mode]);
 
   // ---- Cleanup timers on unmount ----
   useEffect(() => {
@@ -514,9 +518,9 @@ export default function KioskApp() {
     };
   }, []);
 
-  // ---- Start inactivity timer when entering conversation ----
+  // ---- Start inactivity timer when entering voice or text mode ----
   useEffect(() => {
-    if (mode === "conversation") {
+    if (mode === "voice" || mode === "text") {
       resetInactivityTimer();
     } else {
       if (inactivityTimer.current) clearTimeout(inactivityTimer.current);
@@ -534,16 +538,58 @@ export default function KioskApp() {
     }
   }, [showWarning, resetInactivityTimer]);
 
-  // ---- Enter conversation mode ----
-  const enterConversation = useCallback(() => {
-    if (mode === "attract" && !transitioning) {
-      setTransitioning(true);
-      setTimeout(() => {
-        setMode("conversation");
-        setTransitioning(false);
-      }, 300);
-    }
-  }, [mode, transitioning]);
+  // ---- Enter voice mode ----
+  const enterVoiceMode = useCallback(() => {
+    if (transitioning) return;
+    cancelSpeech();
+    setMessages([]);
+    setTransitioning(true);
+    setTimeout(() => {
+      setMode("voice");
+      setTransitioning(false);
+      liveVoice.connect();
+    }, 300);
+  }, [transitioning, cancelSpeech, liveVoice]);
+
+  // ---- Enter text mode ----
+  const enterTextMode = useCallback(() => {
+    if (transitioning) return;
+    liveVoice.disconnect();
+    setMessages([]);
+    setTransitioning(true);
+    setTimeout(() => {
+      setMode("text");
+      setTransitioning(false);
+    }, 300);
+  }, [transitioning, liveVoice]);
+
+  // ---- Switch between modes mid-session ----
+  const switchToVoice = useCallback(() => {
+    if (transitioning) return;
+    cancelSpeech();
+    setMessages([]);
+    setInputValue("");
+    setIsLoading(false);
+    setConsecutiveErrors(0);
+    setTransitioning(true);
+    setTimeout(() => {
+      setMode("voice");
+      setTransitioning(false);
+      liveVoice.connect();
+    }, 300);
+  }, [transitioning, cancelSpeech, liveVoice]);
+
+  const switchToText = useCallback(() => {
+    if (transitioning) return;
+    liveVoice.disconnect();
+    setMessages([]);
+    setRexMood("idle");
+    setTransitioning(true);
+    setTimeout(() => {
+      setMode("text");
+      setTransitioning(false);
+    }, 300);
+  }, [transitioning, liveVoice]);
 
   // ---- Helper: set Rex mood to speaking, then idle after TTS completes ----
   /** Set Rex mood to speaking, call TTS API, then idle when done. */
@@ -703,23 +749,62 @@ export default function KioskApp() {
   if (mode === "attract") {
     return (
       <div
-        className={`fixed inset-0 cursor-pointer ${transitioning ? "animate-fade-out" : "animate-fade-in"}`}
-        onClick={enterConversation}
-        onTouchStart={enterConversation}
+        className={`fixed inset-0 ${transitioning ? "animate-fade-out" : "animate-fade-in"}`}
       >
         <PrehistoricLandscape />
 
         <div className="relative z-10 flex flex-col items-center justify-center h-full px-8">
           {/* Rex character */}
-          <div className="w-[320px] h-[400px] mb-4">
+          <div className="w-[400px] h-[500px] mb-2">
             <RexCharacter mood="idle" />
           </div>
 
-          {/* CTA text */}
-          <h1 className="text-5xl md:text-7xl font-extrabold text-white text-center animate-pulse-glow tracking-tight leading-tight">
-            TAP TO TALK TO
-            <br />A DINOSAUR!
+          {/* Title */}
+          <h1 className="text-5xl md:text-7xl font-extrabold text-white text-center animate-pulse-glow tracking-tight leading-tight mb-8">
+            ASK A DINOSAUR!
           </h1>
+
+          {/* Two big mode buttons */}
+          <div className="flex gap-8">
+            {/* Talk to Rex button */}
+            <button
+              onClick={enterVoiceMode}
+              disabled={!voiceSupported}
+              className="w-[400px] h-[200px] rounded-3xl bg-[#2a9d8f] text-white flex flex-col items-center justify-center gap-4 active:bg-[#228076] disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-2xl hover:scale-[1.02] active:scale-95"
+            >
+              {/* Mic icon */}
+              <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                <line x1="12" y1="19" x2="12" y2="23" />
+                <line x1="8" y1="23" x2="16" y2="23" />
+              </svg>
+              <span className="text-4xl font-extrabold tracking-wide">TALK TO REX</span>
+              <span className="text-xl opacity-80">Use your voice!</span>
+            </button>
+
+            {/* Type to Rex button */}
+            <button
+              onClick={enterTextMode}
+              className="w-[400px] h-[200px] rounded-3xl bg-[#e8722a] text-white flex flex-col items-center justify-center gap-4 active:bg-[#c55f22] transition-all shadow-2xl hover:scale-[1.02] active:scale-95"
+            >
+              {/* Keyboard icon */}
+              <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="2" y="4" width="20" height="16" rx="2" ry="2" />
+                <line x1="6" y1="8" x2="6" y2="8" />
+                <line x1="10" y1="8" x2="10" y2="8" />
+                <line x1="14" y1="8" x2="14" y2="8" />
+                <line x1="18" y1="8" x2="18" y2="8" />
+                <line x1="6" y1="12" x2="6" y2="12" />
+                <line x1="10" y1="12" x2="10" y2="12" />
+                <line x1="14" y1="12" x2="14" y2="12" />
+                <line x1="18" y1="12" x2="18" y2="12" />
+                <line x1="7" y1="16" x2="17" y2="16" />
+              </svg>
+              <span className="text-4xl font-extrabold tracking-wide">TYPE TO REX</span>
+              <span className="text-xl opacity-80">Type your questions!</span>
+            </button>
+          </div>
 
           {/* Fun fact ticker */}
           <div className="absolute bottom-12 left-0 right-0 px-12">
@@ -734,7 +819,116 @@ export default function KioskApp() {
     );
   }
 
-  // ==================== CONVERSATION MODE ====================
+  // ==================== VOICE MODE ====================
+
+  if (mode === "voice") {
+    return (
+      <div
+        className={`fixed inset-0 flex flex-col ${transitioning ? "animate-fade-out" : "animate-fade-in"}`}
+        onTouchStart={handleWarningDismiss}
+        onClick={handleWarningDismiss}
+      >
+        <PrehistoricLandscape />
+
+        {/* Main content: large centered Rex */}
+        <div className="relative z-10 flex-1 flex flex-col items-center justify-center">
+          {/* Rex character — large */}
+          <div className="w-[500px] h-[600px]">
+            <RexCharacter mood={rexMood} />
+          </div>
+
+          {/* Visual feedback below Rex */}
+          <div className="mt-4 flex flex-col items-center gap-3 min-h-[80px]">
+            {liveVoice.state === "connecting" && (
+              <div className="flex items-center gap-3 animate-fade-in">
+                <div className="w-6 h-6 border-3 border-white/30 border-t-white rounded-full animate-spin" />
+                <p className="text-2xl text-[#f5e6c8] font-semibold">Waking up Rex...</p>
+              </div>
+            )}
+
+            {liveVoice.state === "idle" && (
+              <div className="flex flex-col items-center gap-3 animate-fade-in">
+                <div className="voice-ring-pulse w-20 h-20 rounded-full border-4 border-green-400" />
+                <p className="text-2xl text-[#f5e6c8] font-semibold">Just talk to Rex!</p>
+              </div>
+            )}
+
+            {liveVoice.state === "listening" && (
+              <div className="flex flex-col items-center gap-3 animate-fade-in">
+                <div className="voice-ring-pulse w-20 h-20 rounded-full border-4 border-green-400" />
+                <p className="text-2xl text-green-300 font-semibold">Listening...</p>
+              </div>
+            )}
+
+            {liveVoice.state === "speaking" && (
+              <div className="flex flex-col items-center gap-3 animate-fade-in">
+                <div className="flex items-end gap-[4px] h-10">
+                  {[0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6].map((delay, i) => (
+                    <div
+                      key={i}
+                      className="w-[5px] bg-[#e8722a] rounded-full sound-bar"
+                      style={{ height: "100%", animationDelay: `${delay}s` }}
+                    />
+                  ))}
+                </div>
+                <p className="text-2xl text-[#e8722a] font-semibold">Rex is talking...</p>
+              </div>
+            )}
+
+            {liveVoice.state === "disconnected" && liveVoice.error && (
+              <div className="flex flex-col items-center gap-4 animate-fade-in">
+                <p className="text-xl text-red-400 font-medium">{liveVoice.error}</p>
+                <button
+                  onClick={switchToText}
+                  className="px-8 py-4 rounded-xl bg-[#e8722a] text-white text-xl font-bold active:bg-[#c55f22] transition-colors shadow-lg"
+                >
+                  TRY TYPING INSTEAD
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Bottom bar */}
+        <div className="relative z-10 flex-shrink-0 p-6 flex gap-4 justify-center">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              resetToAttract();
+            }}
+            className="h-[64px] px-10 rounded-xl bg-black/40 text-[#f5f0e8] text-xl font-bold backdrop-blur-sm active:bg-black/60 transition-colors"
+          >
+            START OVER
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              switchToText();
+            }}
+            className="h-[64px] px-10 rounded-xl bg-[#e8722a] text-white text-xl font-bold active:bg-[#c55f22] transition-colors shadow-lg"
+          >
+            SWITCH TO TYPING
+          </button>
+        </div>
+
+        {/* Inactivity warning overlay */}
+        {showWarning && (
+          <div
+            className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/70 animate-fade-in"
+            onClick={(e) => { e.stopPropagation(); handleWarningDismiss(); }}
+            onTouchStart={(e) => { e.stopPropagation(); handleWarningDismiss(); }}
+          >
+            <div className="w-64 h-64 mb-6"><SleepingRex /></div>
+            <p className="text-3xl text-[#f5e6c8] font-bold mb-4 text-center">Rex is getting sleepy...</p>
+            <p className="text-xl text-[#f5e6c8] opacity-80 mb-8">Touch anywhere to keep talking!</p>
+            <div className="text-8xl font-extrabold text-[#e8722a] animate-countdown-pulse">{countdown}</div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ==================== TEXT MODE ====================
 
   return (
     <div
@@ -797,7 +991,7 @@ export default function KioskApp() {
                 <p className="text-2xl text-[#f5e6c8] opacity-60 text-center">
                   Ask Rex a question!
                   <br />
-                  <span className="text-lg">Tap a button below or type your own.</span>
+                  <span className="text-lg">Tap a button or type your own.</span>
                 </p>
               </div>
             )}
@@ -828,96 +1022,50 @@ export default function KioskApp() {
           {/* Input area */}
           <div className="flex-shrink-0 pb-2 space-y-3">
             {/* Error messages */}
-            {(micError || liveVoice.error) && (
+            {micError && (
               <div className="px-4 py-3 rounded-xl bg-red-500/80 backdrop-blur-sm animate-fade-in">
-                <p className="text-white text-lg font-medium">{micError || liveVoice.error}</p>
+                <p className="text-white text-lg font-medium">{micError}</p>
               </div>
             )}
 
-            {/* Live voice active — show status + end button */}
-            {isLiveConnected && (
-              <div className="animate-fade-in space-y-3">
-                <div className="px-4 py-4 rounded-xl bg-black/30 backdrop-blur-sm flex items-center gap-3">
-                  {liveVoice.state === "speaking" ? (
-                    <>
-                      <div className="flex items-end gap-[3px] h-5">
-                        <div className="w-[3px] bg-[#e8722a] rounded-full sound-bar" style={{ height: "100%", animationDelay: "0s" }} />
-                        <div className="w-[3px] bg-[#e8722a] rounded-full sound-bar" style={{ height: "100%", animationDelay: "0.15s" }} />
-                        <div className="w-[3px] bg-[#e8722a] rounded-full sound-bar" style={{ height: "100%", animationDelay: "0.3s" }} />
-                        <div className="w-[3px] bg-[#e8722a] rounded-full sound-bar" style={{ height: "100%", animationDelay: "0.45s" }} />
-                        <div className="w-[3px] bg-[#e8722a] rounded-full sound-bar" style={{ height: "100%", animationDelay: "0.6s" }} />
-                      </div>
-                      <p className="text-[#f5e6c8] text-xl font-medium">Rex is talking...</p>
-                    </>
-                  ) : (
-                    <>
-                      <div className="w-4 h-4 rounded-full bg-green-400 animate-mic-pulse flex-shrink-0" />
-                      <p className="text-[#f5e6c8] text-xl font-medium">
-                        Listening! Just ask Rex anything...
-                      </p>
-                    </>
-                  )}
-                </div>
+            {/* Text input + switch to voice */}
+            <div className="space-y-3">
+              <form onSubmit={handleSubmit} className="flex gap-3">
+                <input
+                  ref={inputRef}
+                  type="text"
+                  value={inputValue}
+                  onChange={(e) => setInputValue(e.target.value)}
+                  placeholder="Type your question..."
+                  disabled={isLoading || consecutiveErrors >= 3}
+                  className="flex-1 h-[56px] px-5 rounded-xl bg-white/90 text-[#3d2b1f] text-xl placeholder:text-[#8a7a6a] outline-none focus:ring-2 focus:ring-[#e8722a] disabled:opacity-50 disabled:cursor-not-allowed"
+                />
+                <button
+                  type="submit"
+                  disabled={isLoading || !inputValue.trim() || consecutiveErrors >= 3}
+                  className="h-[56px] px-8 rounded-xl bg-[#e8722a] text-white text-xl font-bold active:bg-[#c55f22] disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg"
+                >
+                  ASK REX!
+                </button>
+              </form>
+
+              {/* Switch to voice button */}
+              {voiceSupported && (
                 <button
                   type="button"
-                  onClick={() => { liveVoice.disconnect(); setRexMood("idle"); }}
-                  className="w-full h-[56px] rounded-xl bg-red-500/80 text-white text-lg font-bold flex items-center justify-center gap-2 active:bg-red-600 transition-colors"
+                  onClick={switchToVoice}
+                  className="w-full h-[48px] rounded-xl bg-[#2a9d8f]/60 text-white text-lg font-semibold flex items-center justify-center gap-2 active:bg-[#2a9d8f] transition-colors"
                 >
-                  End Voice Chat
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+                    <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                    <line x1="12" y1="19" x2="12" y2="23" />
+                    <line x1="8" y1="23" x2="16" y2="23" />
+                  </svg>
+                  SWITCH TO VOICE
                 </button>
-              </div>
-            )}
-
-            {/* Live voice connecting */}
-            {liveVoice.state === "connecting" && (
-              <div className="px-4 py-4 rounded-xl bg-black/30 backdrop-blur-sm flex items-center gap-3 animate-fade-in">
-                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin flex-shrink-0" />
-                <p className="text-[#f5e6c8] text-xl font-medium">Connecting to Rex...</p>
-              </div>
-            )}
-
-            {/* Default mode: Talk to Rex button + text input */}
-            {!isLiveConnected && liveVoice.state !== "connecting" && voiceState !== "listening" && (
-              <div className="space-y-3">
-                {/* Big "Talk to Rex" button */}
-                {voiceSupported && (
-                  <button
-                    type="button"
-                    onClick={() => { liveVoice.connect(); setRexMood("thinking"); }}
-                    disabled={isLoading || consecutiveErrors >= 3}
-                    className="w-full h-[72px] rounded-xl bg-[#2a9d8f] text-white text-2xl font-bold flex items-center justify-center gap-3 active:bg-[#228076] disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg animate-fade-in"
-                  >
-                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
-                      <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-                      <line x1="12" y1="19" x2="12" y2="23" />
-                      <line x1="8" y1="23" x2="16" y2="23" />
-                    </svg>
-                    TALK TO REX!
-                  </button>
-                )}
-
-                {/* Text input */}
-                <form onSubmit={handleSubmit} className="flex gap-3">
-                  <input
-                    ref={inputRef}
-                    type="text"
-                    value={inputValue}
-                    onChange={(e) => setInputValue(e.target.value)}
-                    placeholder="Or type your question..."
-                    disabled={isLoading || consecutiveErrors >= 3}
-                    className="flex-1 h-[56px] px-5 rounded-xl bg-white/90 text-[#3d2b1f] text-xl placeholder:text-[#8a7a6a] outline-none focus:ring-2 focus:ring-[#e8722a] disabled:opacity-50 disabled:cursor-not-allowed"
-                  />
-                  <button
-                    type="submit"
-                    disabled={isLoading || !inputValue.trim() || consecutiveErrors >= 3}
-                    className="h-[56px] px-8 rounded-xl bg-[#e8722a] text-white text-xl font-bold active:bg-[#c55f22] disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg"
-                  >
-                    ASK REX!
-                  </button>
-                </form>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -926,48 +1074,24 @@ export default function KioskApp() {
       {showWarning && (
         <div
           className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/70 animate-fade-in"
-          onClick={(e) => {
-            e.stopPropagation();
-            handleWarningDismiss();
-          }}
-          onTouchStart={(e) => {
-            e.stopPropagation();
-            handleWarningDismiss();
-          }}
+          onClick={(e) => { e.stopPropagation(); handleWarningDismiss(); }}
+          onTouchStart={(e) => { e.stopPropagation(); handleWarningDismiss(); }}
         >
-          <div className="w-64 h-64 mb-6">
-            <SleepingRex />
-          </div>
-          <p className="text-3xl text-[#f5e6c8] font-bold mb-4 text-center">
-            Rex is getting sleepy...
-          </p>
-          <p className="text-xl text-[#f5e6c8] opacity-80 mb-8">
-            Touch anywhere to keep talking!
-          </p>
-          <div className="text-8xl font-extrabold text-[#e8722a] animate-countdown-pulse">
-            {countdown}
-          </div>
+          <div className="w-64 h-64 mb-6"><SleepingRex /></div>
+          <p className="text-3xl text-[#f5e6c8] font-bold mb-4 text-center">Rex is getting sleepy...</p>
+          <p className="text-xl text-[#f5e6c8] opacity-80 mb-8">Touch anywhere to keep talking!</p>
+          <div className="text-8xl font-extrabold text-[#e8722a] animate-countdown-pulse">{countdown}</div>
         </div>
       )}
 
       {/* ---- Full offline fallback overlay ---- */}
       {consecutiveErrors >= 3 && (
         <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-[#1a2e1a] animate-fade-in">
-          <div className="w-72 h-72 mb-6">
-            <SleepingRex />
-          </div>
-          <p className="text-4xl text-[#f5e6c8] font-bold mb-4 text-center">
-            Rex is taking a nap right now.
-          </p>
-          <p className="text-2xl text-[#f5e6c8] opacity-70 mb-10">
-            Come back soon!
-          </p>
+          <div className="w-72 h-72 mb-6"><SleepingRex /></div>
+          <p className="text-4xl text-[#f5e6c8] font-bold mb-4 text-center">Rex is taking a nap right now.</p>
+          <p className="text-2xl text-[#f5e6c8] opacity-70 mb-10">Come back soon!</p>
           <button
-            onClick={() => {
-              setConsecutiveErrors(0);
-              setMessages([]);
-              resetToAttract();
-            }}
+            onClick={() => { setConsecutiveErrors(0); setMessages([]); resetToAttract(); }}
             className="px-10 py-5 rounded-xl bg-[#e8722a] text-white text-2xl font-bold active:bg-[#c55f22] transition-colors shadow-lg"
           >
             Try Again
