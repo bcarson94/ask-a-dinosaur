@@ -34,10 +34,10 @@ export function useLiveVoice() {
   const wsRef = useRef<WebSocket | null>(null);
   const captureCtxRef = useRef<AudioContext | null>(null);
   const playbackCtxRef = useRef<AudioContext | null>(null);
+  const playbackWorkletRef = useRef<AudioWorkletNode | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const workletRef = useRef<AudioWorkletNode | null>(null);
-  const audioQueueRef = useRef<ArrayBuffer[]>([]);
-  const isPlayingRef = useRef(false);
+  const endedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Clean up on unmount
   useEffect(() => {
@@ -47,46 +47,7 @@ export function useLiveVoice() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /** Play queued PCM audio chunks sequentially. */
-  const playNextChunk = useCallback(() => {
-    if (isPlayingRef.current) return;
-    if (audioQueueRef.current.length === 0) {
-      setState((s) => (s === "speaking" ? "idle" : s));
-      return;
-    }
-
-    isPlayingRef.current = true;
-    const chunk = audioQueueRef.current.shift()!;
-
-    const ctx = playbackCtxRef.current;
-    if (!ctx) {
-      isPlayingRef.current = false;
-      return;
-    }
-
-    // Convert Int16 PCM to Float32 for Web Audio API
-    const int16 = new Int16Array(chunk);
-    const float32 = new Float32Array(int16.length);
-    for (let i = 0; i < int16.length; i++) {
-      float32[i] = int16[i] / 32768;
-    }
-
-    const buffer = ctx.createBuffer(1, float32.length, 24000);
-    buffer.getChannelData(0).set(float32);
-
-    const source = ctx.createBufferSource();
-    source.buffer = buffer;
-    source.connect(ctx.destination);
-
-    source.onended = () => {
-      isPlayingRef.current = false;
-      playNextChunk();
-    };
-
-    source.start();
-  }, []);
-
-  /** Enqueue an audio chunk and start playback if needed. */
+  /** Send a PCM audio chunk to the playback worklet's ring buffer. */
   const enqueueAudio = useCallback(
     (base64Data: string) => {
       const binary = atob(base64Data);
@@ -95,14 +56,16 @@ export function useLiveVoice() {
         bytes[i] = binary.charCodeAt(i);
       }
 
-      audioQueueRef.current.push(bytes.buffer);
+      // Convert to Int16 and send to playback worklet
+      const int16 = new Int16Array(bytes.buffer);
+      playbackWorkletRef.current?.port.postMessage(int16.buffer, [int16.buffer]);
+
       setState("speaking");
 
-      if (!isPlayingRef.current) {
-        playNextChunk();
-      }
+      // Reset the "ended" timer — audio is still arriving
+      if (endedTimerRef.current) clearTimeout(endedTimerRef.current);
     },
-    [playNextChunk]
+    []
   );
 
   /** Connect to Gemini Live API and start mic capture. */
@@ -174,12 +137,11 @@ export function useLiveVoice() {
         data = JSON.parse(event.data);
       }
 
-      // Setup complete — start capturing audio
+      // Setup complete — start capturing audio and playback worklet
       if (data.setupComplete) {
         setState("idle");
         await startCapture(captureCtx, stream, ws);
-        // Send a greeting prompt to make Rex introduce himself
-        setState("idle");
+        await initPlaybackWorklet(playbackCtx);
         return;
       }
 
@@ -197,9 +159,13 @@ export function useLiveVoice() {
           }
         }
 
-        // If the server signals turn completion, we can go back to idle after audio finishes
+        // When the server signals turn completion, wait a bit for the
+        // playback ring buffer to drain, then go back to idle
         if (data.serverContent.turnComplete) {
-          // Audio queue will set state to idle when done playing
+          if (endedTimerRef.current) clearTimeout(endedTimerRef.current);
+          endedTimerRef.current = setTimeout(() => {
+            setState((s) => (s === "speaking" ? "idle" : s));
+          }, 1500);
         }
       }
     };
@@ -266,6 +232,27 @@ export function useLiveVoice() {
     // Don't connect worklet to destination — we don't want to hear ourselves
   };
 
+  /** Initialize the playback AudioWorklet for smooth audio output. */
+  const initPlaybackWorklet = async (ctx: AudioContext) => {
+    try {
+      await ctx.audioWorklet.addModule("/audio-playback-processor.js");
+    } catch (e) {
+      console.error("Failed to load playback worklet:", e);
+      return;
+    }
+
+    const worklet = new AudioWorkletNode(ctx, "audio-playback-processor");
+    worklet.connect(ctx.destination);
+    playbackWorkletRef.current = worklet;
+
+    // When the worklet reports the buffer ran dry, transition to idle
+    worklet.port.onmessage = (event) => {
+      if (event.data === "ended") {
+        setState((s) => (s === "speaking" ? "idle" : s));
+      }
+    };
+  };
+
   /** Clean up all resources. */
   const cleanup = useCallback(() => {
     if (workletRef.current) {
@@ -280,12 +267,19 @@ export function useLiveVoice() {
       captureCtxRef.current.close().catch(() => {});
       captureCtxRef.current = null;
     }
+    if (playbackWorkletRef.current) {
+      playbackWorkletRef.current.port.postMessage("clear");
+      playbackWorkletRef.current.disconnect();
+      playbackWorkletRef.current = null;
+    }
     if (playbackCtxRef.current) {
       playbackCtxRef.current.close().catch(() => {});
       playbackCtxRef.current = null;
     }
-    audioQueueRef.current = [];
-    isPlayingRef.current = false;
+    if (endedTimerRef.current) {
+      clearTimeout(endedTimerRef.current);
+      endedTimerRef.current = null;
+    }
   }, []);
 
   /** Disconnect from the Live API. */
