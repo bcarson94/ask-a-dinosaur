@@ -755,41 +755,41 @@ export default function KioskApp() {
 
         <div className="relative z-10 flex flex-col items-center justify-center h-full px-8">
           {/* Rex character */}
-          <div className="w-[400px] h-[500px] mb-2">
+          <div className="w-[320px] h-[380px] mb-2 flex-shrink-0">
             <RexCharacter mood="idle" />
           </div>
 
           {/* Title */}
-          <h1 className="text-5xl md:text-7xl font-extrabold text-white text-center animate-pulse-glow tracking-tight leading-tight mb-8">
+          <h1 className="text-5xl md:text-7xl font-extrabold text-white text-center animate-pulse-glow tracking-tight leading-tight mb-6 flex-shrink-0">
             ASK A DINOSAUR!
           </h1>
 
           {/* Two big mode buttons */}
-          <div className="flex gap-8">
+          <div className="flex gap-8 flex-shrink-0">
             {/* Talk to Rex button */}
             <button
               onClick={enterVoiceMode}
               disabled={!voiceSupported}
-              className="w-[400px] h-[200px] rounded-3xl bg-[#2a9d8f] text-white flex flex-col items-center justify-center gap-4 active:bg-[#228076] disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-2xl hover:scale-[1.02] active:scale-95"
+              className="w-[340px] h-[160px] rounded-3xl bg-[#2a9d8f] text-white flex flex-col items-center justify-center gap-3 active:bg-[#228076] disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-2xl hover:scale-[1.02] active:scale-95"
             >
               {/* Mic icon */}
-              <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
                 <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
                 <line x1="12" y1="19" x2="12" y2="23" />
                 <line x1="8" y1="23" x2="16" y2="23" />
               </svg>
-              <span className="text-4xl font-extrabold tracking-wide">TALK TO REX</span>
-              <span className="text-xl opacity-80">Use your voice!</span>
+              <span className="text-3xl font-extrabold tracking-wide">TALK TO REX</span>
+              <span className="text-lg opacity-80">Use your voice!</span>
             </button>
 
             {/* Type to Rex button */}
             <button
               onClick={enterTextMode}
-              className="w-[400px] h-[200px] rounded-3xl bg-[#e8722a] text-white flex flex-col items-center justify-center gap-4 active:bg-[#c55f22] transition-all shadow-2xl hover:scale-[1.02] active:scale-95"
+              className="w-[340px] h-[160px] rounded-3xl bg-[#e8722a] text-white flex flex-col items-center justify-center gap-3 active:bg-[#c55f22] transition-all shadow-2xl hover:scale-[1.02] active:scale-95"
             >
               {/* Keyboard icon */}
-              <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <rect x="2" y="4" width="20" height="16" rx="2" ry="2" />
                 <line x1="6" y1="8" x2="6" y2="8" />
                 <line x1="10" y1="8" x2="10" y2="8" />
@@ -801,19 +801,11 @@ export default function KioskApp() {
                 <line x1="18" y1="12" x2="18" y2="12" />
                 <line x1="7" y1="16" x2="17" y2="16" />
               </svg>
-              <span className="text-4xl font-extrabold tracking-wide">TYPE TO REX</span>
-              <span className="text-xl opacity-80">Type your questions!</span>
+              <span className="text-3xl font-extrabold tracking-wide">TYPE TO REX</span>
+              <span className="text-lg opacity-80">Type your questions!</span>
             </button>
           </div>
 
-          {/* Fun fact ticker */}
-          <div className="absolute bottom-12 left-0 right-0 px-12">
-            <div className="text-center" key={factIndex}>
-              <p className="text-xl md:text-2xl text-[#f5e6c8] opacity-80 animate-fact-fade max-w-3xl mx-auto">
-                {FUN_FACTS[factIndex]}
-              </p>
-            </div>
-          </div>
         </div>
       </div>
     );
@@ -1020,52 +1012,25 @@ export default function KioskApp() {
           </div>
 
           {/* Input area */}
-          <div className="flex-shrink-0 pb-2 space-y-3">
-            {/* Error messages */}
-            {micError && (
-              <div className="px-4 py-3 rounded-xl bg-red-500/80 backdrop-blur-sm animate-fade-in">
-                <p className="text-white text-lg font-medium">{micError}</p>
-              </div>
-            )}
-
-            {/* Text input + switch to voice */}
-            <div className="space-y-3">
-              <form onSubmit={handleSubmit} className="flex gap-3">
-                <input
-                  ref={inputRef}
-                  type="text"
-                  value={inputValue}
-                  onChange={(e) => setInputValue(e.target.value)}
-                  placeholder="Type your question..."
-                  disabled={isLoading || consecutiveErrors >= 3}
-                  className="flex-1 h-[56px] px-5 rounded-xl bg-white/90 text-[#3d2b1f] text-xl placeholder:text-[#8a7a6a] outline-none focus:ring-2 focus:ring-[#e8722a] disabled:opacity-50 disabled:cursor-not-allowed"
-                />
-                <button
-                  type="submit"
-                  disabled={isLoading || !inputValue.trim() || consecutiveErrors >= 3}
-                  className="h-[56px] px-8 rounded-xl bg-[#e8722a] text-white text-xl font-bold active:bg-[#c55f22] disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg"
-                >
-                  ASK REX!
-                </button>
-              </form>
-
-              {/* Switch to voice button */}
-              {voiceSupported && (
-                <button
-                  type="button"
-                  onClick={switchToVoice}
-                  className="w-full h-[48px] rounded-xl bg-[#2a9d8f]/60 text-white text-lg font-semibold flex items-center justify-center gap-2 active:bg-[#2a9d8f] transition-colors"
-                >
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
-                    <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-                    <line x1="12" y1="19" x2="12" y2="23" />
-                    <line x1="8" y1="23" x2="16" y2="23" />
-                  </svg>
-                  SWITCH TO VOICE
-                </button>
-              )}
-            </div>
+          <div className="flex-shrink-0 pb-2">
+            <form onSubmit={handleSubmit} className="flex gap-3">
+              <input
+                ref={inputRef}
+                type="text"
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                placeholder="Type your question..."
+                disabled={isLoading || consecutiveErrors >= 3}
+                className="flex-1 h-[56px] px-5 rounded-xl bg-white/90 text-[#3d2b1f] text-xl placeholder:text-[#8a7a6a] outline-none focus:ring-2 focus:ring-[#e8722a] disabled:opacity-50 disabled:cursor-not-allowed"
+              />
+              <button
+                type="submit"
+                disabled={isLoading || !inputValue.trim() || consecutiveErrors >= 3}
+                className="h-[56px] px-8 rounded-xl bg-[#e8722a] text-white text-xl font-bold active:bg-[#c55f22] disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg"
+              >
+                ASK REX!
+              </button>
+            </form>
           </div>
         </div>
       </div>
