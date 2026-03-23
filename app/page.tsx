@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useVoice } from "./hooks/useVoice";
+import { useLiveVoice } from "./hooks/useLiveVoice";
 
 // ==================== TYPES ====================
 
@@ -424,7 +425,7 @@ export default function KioskApp() {
   // If clicked again, we let the API generate a fresh answer.
   const askedQuickQuestionsRef = useRef<Set<string>>(new Set());
 
-  // Voice
+  // Voice (REST-based fallback)
   const {
     voiceSupported,
     voiceState,
@@ -435,6 +436,10 @@ export default function KioskApp() {
     speak,
     cancelSpeech,
   } = useVoice();
+
+  // Live voice (real-time WebSocket)
+  const liveVoice = useLiveVoice();
+  const isLiveConnected = liveVoice.state !== "disconnected" && liveVoice.state !== "connecting";
 
   // ---- Fact ticker rotation ----
   useEffect(() => {
@@ -450,9 +455,19 @@ export default function KioskApp() {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  // ---- Sync Rex mood with live voice state ----
+  useEffect(() => {
+    if (liveVoice.state === "speaking") {
+      setRexMood("speaking");
+    } else if (liveVoice.state === "idle" || liveVoice.state === "listening") {
+      setRexMood("idle");
+    }
+  }, [liveVoice.state]);
+
   // ---- Reset to attract mode ----
   const resetToAttract = useCallback(() => {
     cancelSpeech();
+    liveVoice.disconnect();
     if (rexMoodTimeoutRef.current) clearTimeout(rexMoodTimeoutRef.current);
     setTransitioning(true);
     setTimeout(() => {
@@ -466,7 +481,7 @@ export default function KioskApp() {
       setConsecutiveErrors(0);
       setTransitioning(false);
     }, 300);
-  }, [cancelSpeech]);
+  }, [cancelSpeech, liveVoice]);
 
   // ---- Inactivity timer ----
   const resetInactivityTimer = useCallback(() => {
@@ -812,101 +827,91 @@ export default function KioskApp() {
 
           {/* Input area */}
           <div className="flex-shrink-0 pb-2 space-y-3">
-            {/* Mic error message */}
-            {micError && (
+            {/* Error messages */}
+            {(micError || liveVoice.error) && (
               <div className="px-4 py-3 rounded-xl bg-red-500/80 backdrop-blur-sm animate-fade-in">
-                <p className="text-white text-lg font-medium">{micError}</p>
+                <p className="text-white text-lg font-medium">{micError || liveVoice.error}</p>
               </div>
             )}
 
-            {/* Voice mode: recording indicator + cancel/send */}
-            {voiceState === "listening" && (
+            {/* Live voice active — show status + end button */}
+            {isLiveConnected && (
               <div className="animate-fade-in space-y-3">
-                {/* Recording indicator */}
                 <div className="px-4 py-4 rounded-xl bg-black/30 backdrop-blur-sm flex items-center gap-3">
-                  <div className="w-4 h-4 rounded-full bg-red-500 animate-mic-pulse flex-shrink-0" />
-                  <p className="text-[#f5e6c8] text-xl font-medium">
-                    Recording... Ask your question, then tap &quot;Ask Rex!&quot;
-                  </p>
+                  {liveVoice.state === "speaking" ? (
+                    <>
+                      <div className="flex items-end gap-[3px] h-5">
+                        <div className="w-[3px] bg-[#e8722a] rounded-full sound-bar" style={{ height: "100%", animationDelay: "0s" }} />
+                        <div className="w-[3px] bg-[#e8722a] rounded-full sound-bar" style={{ height: "100%", animationDelay: "0.15s" }} />
+                        <div className="w-[3px] bg-[#e8722a] rounded-full sound-bar" style={{ height: "100%", animationDelay: "0.3s" }} />
+                        <div className="w-[3px] bg-[#e8722a] rounded-full sound-bar" style={{ height: "100%", animationDelay: "0.45s" }} />
+                        <div className="w-[3px] bg-[#e8722a] rounded-full sound-bar" style={{ height: "100%", animationDelay: "0.6s" }} />
+                      </div>
+                      <p className="text-[#f5e6c8] text-xl font-medium">Rex is talking...</p>
+                    </>
+                  ) : (
+                    <>
+                      <div className="w-4 h-4 rounded-full bg-green-400 animate-mic-pulse flex-shrink-0" />
+                      <p className="text-[#f5e6c8] text-xl font-medium">
+                        Listening! Just ask Rex anything...
+                      </p>
+                    </>
+                  )}
                 </div>
-                {/* Cancel + Send buttons */}
-                <div className="flex gap-3">
-                  <button
-                    type="button"
-                    onClick={handleMicToggle}
-                    className="h-[64px] flex-1 rounded-xl bg-red-500 text-white text-xl font-bold flex items-center justify-center gap-3 active:bg-red-600 transition-colors shadow-lg"
-                  >
-                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                      <rect x="6" y="4" width="12" height="16" rx="2" fill="white" />
-                    </svg>
-                    CANCEL
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleVoiceSubmit}
-                    className="h-[64px] flex-1 rounded-xl bg-[#e8722a] text-white text-xl font-bold flex items-center justify-center gap-3 active:bg-[#c55f22] transition-colors shadow-lg"
-                  >
-                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                      <line x1="22" y1="2" x2="11" y2="13" />
-                      <polygon points="22 2 15 22 11 13 2 9 22 2" fill="white" />
-                    </svg>
-                    ASK REX!
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => { liveVoice.disconnect(); setRexMood("idle"); }}
+                  className="w-full h-[56px] rounded-xl bg-red-500/80 text-white text-lg font-bold flex items-center justify-center gap-2 active:bg-red-600 transition-colors"
+                >
+                  End Voice Chat
+                </button>
               </div>
             )}
 
-            {/* Default mode: mic button + text input */}
-            {voiceState !== "listening" && (
-              <div className="flex gap-3 items-center">
-                {/* Big mic button */}
+            {/* Live voice connecting */}
+            {liveVoice.state === "connecting" && (
+              <div className="px-4 py-4 rounded-xl bg-black/30 backdrop-blur-sm flex items-center gap-3 animate-fade-in">
+                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin flex-shrink-0" />
+                <p className="text-[#f5e6c8] text-xl font-medium">Connecting to Rex...</p>
+              </div>
+            )}
+
+            {/* Default mode: Talk to Rex button + text input */}
+            {!isLiveConnected && liveVoice.state !== "connecting" && voiceState !== "listening" && (
+              <div className="space-y-3">
+                {/* Big "Talk to Rex" button */}
                 {voiceSupported && (
                   <button
                     type="button"
-                    onClick={handleMicToggle}
-                    disabled={(isLoading || consecutiveErrors >= 3) && voiceState !== "speaking"}
-                    className={`flex-shrink-0 w-[64px] h-[64px] rounded-full flex items-center justify-center transition-colors shadow-lg ${
-                      voiceState === "speaking"
-                        ? "bg-[#e8722a]"
-                        : "bg-[#2a9d8f] active:bg-[#228076]"
-                    } disabled:opacity-50 disabled:cursor-not-allowed`}
+                    onClick={() => { liveVoice.connect(); setRexMood("thinking"); }}
+                    disabled={isLoading || consecutiveErrors >= 3}
+                    className="w-full h-[72px] rounded-xl bg-[#2a9d8f] text-white text-2xl font-bold flex items-center justify-center gap-3 active:bg-[#228076] disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg animate-fade-in"
                   >
-                    {voiceState === "speaking" ? (
-                      /* Sound wave bars (tap to stop) */
-                      <div className="flex items-end gap-[3px] h-7">
-                        <div className="w-[3px] bg-white rounded-full sound-bar" style={{ height: "100%", animationDelay: "0s" }} />
-                        <div className="w-[3px] bg-white rounded-full sound-bar" style={{ height: "100%", animationDelay: "0.15s" }} />
-                        <div className="w-[3px] bg-white rounded-full sound-bar" style={{ height: "100%", animationDelay: "0.3s" }} />
-                        <div className="w-[3px] bg-white rounded-full sound-bar" style={{ height: "100%", animationDelay: "0.45s" }} />
-                        <div className="w-[3px] bg-white rounded-full sound-bar" style={{ height: "100%", animationDelay: "0.6s" }} />
-                      </div>
-                    ) : (
-                      /* Mic idle icon */
-                      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
-                        <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-                        <line x1="12" y1="19" x2="12" y2="23" />
-                        <line x1="8" y1="23" x2="16" y2="23" />
-                      </svg>
-                    )}
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+                      <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                      <line x1="12" y1="19" x2="12" y2="23" />
+                      <line x1="8" y1="23" x2="16" y2="23" />
+                    </svg>
+                    TALK TO REX!
                   </button>
                 )}
 
                 {/* Text input */}
-                <form onSubmit={handleSubmit} className="flex-1 flex gap-3">
+                <form onSubmit={handleSubmit} className="flex gap-3">
                   <input
                     ref={inputRef}
                     type="text"
                     value={inputValue}
                     onChange={(e) => setInputValue(e.target.value)}
-                    placeholder="Type your own question..."
+                    placeholder="Or type your question..."
                     disabled={isLoading || consecutiveErrors >= 3}
-                    className="flex-1 h-[64px] px-5 rounded-xl bg-white/90 text-[#3d2b1f] text-xl placeholder:text-[#8a7a6a] outline-none focus:ring-2 focus:ring-[#e8722a] disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="flex-1 h-[56px] px-5 rounded-xl bg-white/90 text-[#3d2b1f] text-xl placeholder:text-[#8a7a6a] outline-none focus:ring-2 focus:ring-[#e8722a] disabled:opacity-50 disabled:cursor-not-allowed"
                   />
                   <button
                     type="submit"
                     disabled={isLoading || !inputValue.trim() || consecutiveErrors >= 3}
-                    className="h-[64px] px-8 rounded-xl bg-[#e8722a] text-white text-xl font-bold active:bg-[#c55f22] disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg"
+                    className="h-[56px] px-8 rounded-xl bg-[#e8722a] text-white text-xl font-bold active:bg-[#c55f22] disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg"
                   >
                     ASK REX!
                   </button>
