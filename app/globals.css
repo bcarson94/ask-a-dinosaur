@@ -61,6 +61,17 @@ body {
   100% { transform: translateX(110vw); }
 }
 
+/* Dino roaming — left to right */
+@keyframes dino-roam-lr {
+  0% { transform: translateX(-120px) scaleX(1); }
+  100% { transform: translateX(110vw) scaleX(1); }
+}
+/* Dino roaming — right to left (flipped) */
+@keyframes dino-roam-rl {
+  0% { transform: translateX(110vw) scaleX(-1); }
+  100% { transform: translateX(-120px) scaleX(-1); }
+}
+
 /* Fact ticker fade */
 @keyframes fact-fade-in {
   0% { opacity: 0; transform: translateY(10px); }
@@ -173,6 +184,19 @@ body {
 
 .animate-cloud-2 {
   animation: cloud-drift-2 60s linear infinite;
+}
+
+.animate-dino-roam-1 {
+  animation: dino-roam-lr 55s linear infinite;
+}
+.animate-dino-roam-2 {
+  animation: dino-roam-rl 70s linear infinite;
+}
+.animate-dino-roam-3 {
+  animation: dino-roam-lr 80s linear infinite;
+}
+.animate-dino-roam-4 {
+  animation: dino-roam-rl 45s linear infinite;
 }
 
 .animate-fact-fade {
