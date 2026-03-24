@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useVoice } from "./hooks/useVoice";
-import { useLiveVoice } from "./hooks/useLiveVoice";
 
 // ==================== TYPES ====================
 
@@ -399,9 +398,6 @@ export default function KioskApp() {
     cancelSpeech,
   } = useVoice();
 
-  // Live voice (real-time WebSocket)
-  const liveVoice = useLiveVoice();
-  const isLiveConnected = liveVoice.state !== "disconnected" && liveVoice.state !== "connecting";
 
   // ---- Fact ticker rotation ----
   useEffect(() => {
@@ -417,19 +413,10 @@ export default function KioskApp() {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // ---- Sync Rex mood with live voice state ----
-  useEffect(() => {
-    if (liveVoice.state === "speaking") {
-      setRexMood("speaking");
-    } else if (liveVoice.state === "idle" || liveVoice.state === "listening") {
-      setRexMood("idle");
-    }
-  }, [liveVoice.state]);
 
   // ---- Reset to attract mode ----
   const resetToAttract = useCallback(() => {
     cancelSpeech();
-    liveVoice.disconnect();
     if (rexMoodTimeoutRef.current) clearTimeout(rexMoodTimeoutRef.current);
     askedQuickQuestionsRef.current.clear();
     setTransitioning(true);
@@ -444,7 +431,7 @@ export default function KioskApp() {
       setConsecutiveErrors(0);
       setTransitioning(false);
     }, 300);
-  }, [cancelSpeech, liveVoice]);
+  }, [cancelSpeech]);
 
   // ---- Inactivity timer ----
   const resetInactivityTimer = useCallback(() => {
@@ -508,21 +495,20 @@ export default function KioskApp() {
     setTimeout(() => {
       setMode("voice");
       setTransitioning(false);
-      liveVoice.connect();
     }, 300);
-  }, [transitioning, cancelSpeech, liveVoice]);
+  }, [transitioning, cancelSpeech]);
 
   // ---- Enter text mode ----
   const enterTextMode = useCallback(() => {
     if (transitioning) return;
-    liveVoice.disconnect();
+    cancelSpeech();
     setMessages([]);
     setTransitioning(true);
     setTimeout(() => {
       setMode("text");
       setTransitioning(false);
     }, 300);
-  }, [transitioning, liveVoice]);
+  }, [transitioning, cancelSpeech]);
 
   // ---- Switch between modes mid-session ----
   const switchToVoice = useCallback(() => {
@@ -536,13 +522,12 @@ export default function KioskApp() {
     setTimeout(() => {
       setMode("voice");
       setTransitioning(false);
-      liveVoice.connect();
     }, 300);
-  }, [transitioning, cancelSpeech, liveVoice]);
+  }, [transitioning, cancelSpeech]);
 
   const switchToText = useCallback(() => {
     if (transitioning) return;
-    liveVoice.disconnect();
+    cancelSpeech();
     setMessages([]);
     setRexMood("idle");
     setTransitioning(true);
@@ -550,7 +535,7 @@ export default function KioskApp() {
       setMode("text");
       setTransitioning(false);
     }, 300);
-  }, [transitioning, liveVoice]);
+  }, [transitioning, cancelSpeech]);
 
   // ---- Helper: set Rex mood to speaking, then idle after TTS completes ----
   /** Set Rex mood to speaking, call TTS API, then idle when done. */
@@ -699,9 +684,13 @@ export default function KioskApp() {
 
   // ---- Submit voice transcript ----
   const handleVoiceSubmit = useCallback(async () => {
+    setRexMood("thinking");
     const text = await stopAndSubmit();
     if (text) {
       sendMessage(text);
+    } else {
+      // STT returned nothing — go back to ready
+      setRexMood("idle");
     }
   }, [stopAndSubmit, sendMessage]);
 
@@ -775,6 +764,21 @@ export default function KioskApp() {
   // ==================== VOICE MODE ====================
 
   if (mode === "voice") {
+    // Determine push-to-talk state
+    const isRecording = voiceState === "listening";
+    const isProcessing = voiceState === "processing" || isLoading;
+    const isSpeaking = rexMood === "speaking";
+    const isReady = !isRecording && !isProcessing && !isSpeaking;
+
+    const handleTalkButton = () => {
+      if (isRecording) {
+        handleVoiceSubmit();
+      } else if (isReady) {
+        resetInactivityTimer();
+        startListening();
+      }
+    };
+
     return (
       <div
         className={`fixed inset-0 flex flex-col ${transitioning ? "animate-fade-out" : "animate-fade-in"}`}
@@ -790,53 +794,70 @@ export default function KioskApp() {
             <RexCharacter mood={rexMood} />
           </div>
 
-          {/* Visual feedback below Rex */}
-          <div className="mt-4 flex flex-col items-center gap-3 min-h-[80px]">
-            {liveVoice.state === "connecting" && (
-              <div className="flex items-center gap-3 animate-fade-in">
-                <div className="w-6 h-6 border-3 border-white/30 border-t-white rounded-full animate-spin" />
-                <p className="text-2xl text-[#f5e6c8] font-semibold">Waking up Rex...</p>
+          {/* Push-to-talk button + status */}
+          <div className="mt-4 flex flex-col items-center gap-4 min-h-[140px]">
+            {/* Ready state — big green mic button */}
+            {isReady && (
+              <div className="flex flex-col items-center gap-3 animate-fade-in">
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleTalkButton(); }}
+                  disabled={consecutiveErrors >= 3}
+                  className="w-[180px] h-[180px] rounded-full bg-[#2a9d8f] text-white flex flex-col items-center justify-center gap-2 active:bg-[#228076] active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-2xl hover:scale-[1.02]"
+                >
+                  <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+                    <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                    <line x1="12" y1="19" x2="12" y2="23" />
+                    <line x1="8" y1="23" x2="16" y2="23" />
+                  </svg>
+                  <span className="text-xl font-extrabold tracking-wide">TAP TO TALK</span>
+                </button>
+                {micError && (
+                  <p className="text-lg text-red-400 font-medium">{micError}</p>
+                )}
               </div>
             )}
 
-            {liveVoice.state === "idle" && (
+            {/* Recording state — pulsing red button */}
+            {isRecording && (
               <div className="flex flex-col items-center gap-3 animate-fade-in">
-                <div className="voice-ring-pulse w-20 h-20 rounded-full border-4 border-green-400" />
-                <p className="text-2xl text-[#f5e6c8] font-semibold">Just talk to Rex!</p>
-              </div>
-            )}
-
-            {liveVoice.state === "listening" && (
-              <div className="flex flex-col items-center gap-3 animate-fade-in">
-                <div className="voice-ring-pulse w-20 h-20 rounded-full border-4 border-green-400" />
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleTalkButton(); }}
+                  className="w-[180px] h-[180px] rounded-full bg-red-500 text-white flex flex-col items-center justify-center gap-2 active:bg-red-700 active:scale-95 transition-all shadow-2xl voice-ring-pulse-red"
+                >
+                  {/* Stop/send icon */}
+                  <svg width="56" height="56" viewBox="0 0 24 24" fill="white">
+                    <rect x="6" y="6" width="12" height="12" rx="2" />
+                  </svg>
+                  <span className="text-xl font-extrabold tracking-wide">TAP TO SEND</span>
+                </button>
                 <p className="text-2xl text-green-300 font-semibold">Listening...</p>
               </div>
             )}
 
-            {liveVoice.state === "speaking" && (
-              <div className="flex flex-col items-center gap-3 animate-fade-in">
-                <div className="flex items-end gap-[4px] h-10">
+            {/* Processing state — thinking spinner */}
+            {isProcessing && (
+              <div className="flex flex-col items-center gap-4 animate-fade-in">
+                <div className="w-[120px] h-[120px] rounded-full bg-[#e8722a]/20 flex items-center justify-center">
+                  <div className="w-16 h-16 border-4 border-[#e8722a]/30 border-t-[#e8722a] rounded-full animate-spin" />
+                </div>
+                <p className="text-2xl text-[#f5e6c8] font-semibold">Rex is thinking...</p>
+              </div>
+            )}
+
+            {/* Speaking state — sound bars */}
+            {isSpeaking && !isProcessing && (
+              <div className="flex flex-col items-center gap-4 animate-fade-in">
+                <div className="flex items-end gap-[6px] h-16">
                   {[0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6].map((delay, i) => (
                     <div
                       key={i}
-                      className="w-[5px] bg-[#e8722a] rounded-full sound-bar"
+                      className="w-[8px] bg-[#e8722a] rounded-full sound-bar"
                       style={{ height: "100%", animationDelay: `${delay}s` }}
                     />
                   ))}
                 </div>
                 <p className="text-2xl text-[#e8722a] font-semibold">Rex is talking...</p>
-              </div>
-            )}
-
-            {liveVoice.state === "disconnected" && liveVoice.error && (
-              <div className="flex flex-col items-center gap-4 animate-fade-in">
-                <p className="text-xl text-red-400 font-medium">{liveVoice.error}</p>
-                <button
-                  onClick={switchToText}
-                  className="px-8 py-4 rounded-xl bg-[#e8722a] text-white text-xl font-bold active:bg-[#c55f22] transition-colors shadow-lg"
-                >
-                  TRY TYPING INSTEAD
-                </button>
               </div>
             )}
           </div>

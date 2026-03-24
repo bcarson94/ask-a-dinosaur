@@ -61,15 +61,11 @@ body {
   100% { transform: translateX(110vw); }
 }
 
-/* Dino roaming — left to right */
-@keyframes dino-roam-lr {
-  0% { transform: translateX(-120px) scaleX(1); }
-  100% { transform: translateX(110vw) scaleX(1); }
-}
-/* Dino roaming — right to left (flipped) */
-@keyframes dino-roam-rl {
-  0% { transform: translateX(110vw) scaleX(-1); }
-  100% { transform: translateX(-120px) scaleX(-1); }
+/* Recording button red pulse */
+@keyframes voice-ring-pulse-red {
+  0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.6); }
+  50% { box-shadow: 0 0 0 20px rgba(239, 68, 68, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
 }
 
 /* Fact ticker fade */
@@ -186,17 +182,8 @@ body {
   animation: cloud-drift-2 60s linear infinite;
 }
 
-.animate-dino-roam-1 {
-  animation: dino-roam-lr 55s linear infinite;
-}
-.animate-dino-roam-2 {
-  animation: dino-roam-rl 70s linear infinite;
-}
-.animate-dino-roam-3 {
-  animation: dino-roam-lr 80s linear infinite;
-}
-.animate-dino-roam-4 {
-  animation: dino-roam-rl 45s linear infinite;
+.voice-ring-pulse-red {
+  animation: voice-ring-pulse-red 1.5s ease-in-out infinite;
 }
 
 .animate-fact-fade {
